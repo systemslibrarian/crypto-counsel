@@ -776,11 +776,7 @@ Use the following reference data from the crypto-compare database to answer ques
 CRYPTO-COMPARE REFERENCE DATA:
 ${context || 'No specific algorithm data matched. Answer from general cryptographic knowledge.'}
 
-Guidelines:
-- Lead with a direct answer
-- Highlight security bits, use cases, and recommendations
-- Warn about known vulnerabilities or misuse patterns
-- Keep responses focused and practical`;
+Respond conversationally. Keep answers to 2-3 short paragraphs max. Lead with one direct sentence answer. Plain language only. Bullet points only if listing 3+ items. Never write walls of text.`;
 
   try {
     const res = await fetch(GROQ_API, {
@@ -797,7 +793,7 @@ Guidelines:
           { role: 'user', content: question }
         ],
         stream: true,
-        max_tokens: 500,
+        max_tokens: 350,
         temperature: 0.3
       })
     });
