@@ -222,10 +222,10 @@
   }
 
   .suggestions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
     gap: 8px;
-    justify-content: center;
+    width: 100%;
     max-width: 640px;
   }
 
@@ -235,13 +235,14 @@
     color: var(--text);
     font-family: 'DM Mono', monospace;
     font-size: 13px;
-    padding: 9px 16px;
-    min-height: 40px;
+    padding: 10px 14px;
+    min-height: 44px;
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s;
     text-align: left;
     letter-spacing: 0.02em;
+    line-height: 1.4;
   }
 
   .suggestion:hover {
@@ -258,6 +259,7 @@
     width: 100%;
     margin: 0 auto;
     animation: fadeUp 0.3s ease;
+    align-self: flex-start;
   }
 
   @keyframes fadeUp {
@@ -520,7 +522,7 @@
     .model-badge { display: none; }
     .input-footer { margin-top: 6px; }
     .input-hint { display: none; }
-    .suggestion { min-height: 44px; display: flex; align-items: center; }
+    .suggestions { grid-template-columns: 1fr; }
   }
   /* Always show copy button on touch devices */
   @media (hover: none) {
@@ -649,9 +651,10 @@ function renderMarkdown(text) {
   const out = [];
   let inList = false;
   for (const line of lines) {
-    if (line.startsWith('- ')) {
+    const listMatch = line.match(/^[\-\*]\s+(.+)/);
+    if (listMatch) {
       if (!inList) { out.push('<ul>'); inList = true; }
-      out.push('<li>' + line.slice(2) + '</li>');
+      out.push('<li>' + listMatch[1] + '</li>');
     } else {
       if (inList) { out.push('</ul>'); inList = false; }
       out.push(line);
