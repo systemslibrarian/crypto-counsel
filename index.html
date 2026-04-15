@@ -648,6 +648,8 @@ function getContext(question) {
 }
 
 function renderMarkdown(text) {
+  // Escape HTML entities before any markdown processing to prevent XSS from model output
+  text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   // Links must be processed before emphasis replacements touch bracket content.
   let html = text.replace(
     /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
@@ -834,7 +836,7 @@ RESPONSE FORMAT:
           { role: 'user', content: question }
         ],
         stream: true,
-        max_tokens: 350,
+        max_tokens: 1024,
         temperature: 0.3
       })
     });
