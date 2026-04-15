@@ -695,7 +695,7 @@ async function ask(question) {
   const context = getContext(question);
   const typingEl = addTyping();
 
-  const systemPrompt = `You are Crypto Counsel, an expert cryptography advisor. You help developers, security professionals, and students understand cryptographic algorithms.
+  const systemPrompt = `You are Crypto Counsel, an expert cryptography advisor. You help developers, security professionals, and students understand cryptographic algorithms. Be concise. Limit your response to 3-4 focused paragraphs. Lead with a direct answer.
 
 Use the following reference data from the crypto-compare database to answer questions. Be accurate, concise, and practical. If the data doesn't cover the question, say so clearly.
 
@@ -722,7 +722,7 @@ Guidelines:
           { role: 'user', content: question }
         ],
         stream: true,
-        max_tokens: 800,
+        max_tokens: 500,
         temperature: 0.3
       })
     });
@@ -799,6 +799,17 @@ document.getElementById('question').addEventListener('input', function() {
 document.getElementById('apiKeyInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') saveKey();
 });
+
+// Support ?q= URL param for crypto-compare integration
+const urlParams = new URLSearchParams(window.location.search);
+const prefilledQ = urlParams.get('q');
+if (prefilledQ) {
+  document.getElementById('question').value = prefilledQ;
+  // Auto-submit if key is already saved
+  if (groqKey) {
+    setTimeout(() => ask(prefilledQ), 500);
+  }
+}
 </script>
 </body>
 </html>
