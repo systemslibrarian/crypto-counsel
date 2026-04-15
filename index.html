@@ -292,6 +292,9 @@
     font-size: 14px;
     line-height: 1.7;
     max-width: calc(100% - 46px);
+    overflow-wrap: break-word;
+    word-break: break-word;
+    min-width: 0;
   }
 
   .message.user .bubble {
@@ -322,6 +325,13 @@
     border-radius: 3px;
     color: var(--accent2);
   }
+
+  .bubble p { margin-bottom: 0.6em; }
+  .bubble p:last-child { margin-bottom: 0; }
+  .bubble ul { padding-left: 1.2em; margin: 0.4em 0; }
+  .bubble li { margin-bottom: 0.3em; }
+  .bubble strong { color: var(--accent); font-weight: 500; }
+  .bubble em { font-style: italic; color: var(--text-dim); }
 
   /* Typing indicator */
   .typing {
