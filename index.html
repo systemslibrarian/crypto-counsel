@@ -578,15 +578,6 @@
   </div>
 </header>
 
-<div class="key-banner" id="keyBanner">
-  <span>🔑 Groq API Key</span>
-  <input type="password" id="apiKeyInput" placeholder="gsk_..." autocomplete="off">
-  <button onclick="saveKey()">Save</button>
-  <label style="font-size:11px; color: var(--text-muted); margin-left:8px; display:flex; align-items:center; gap:5px; cursor:pointer;">
-    <input type="checkbox" id="rememberKey" style="accent-color: var(--gold);"> Remember
-  </label>
-  <span style="font-size:11px; color: var(--text-muted);">— never sent to any server</span>
-</div>
 <div class="corpus-warn hidden" id="corpusWarn">⚠ Failed to load algorithm corpus — answers will use general knowledge only</div>
 
 <main>
@@ -623,10 +614,9 @@
 </main>
 
 <script>
-const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_API = 'https://crypto-counsel-proxy.systemslibrarian.workers.dev';
 const MODEL = 'llama-3.1-8b-instant';
 let corpus = [];
-let groqKey = sessionStorage.getItem('groq_key') || localStorage.getItem('groq_key') || '';
 let conversationHistory = [];
 
 // URL params declared early so corpus load callback can reference prefilledQ
@@ -639,31 +629,12 @@ fetch('corpus.json')
   .then(data => {
     corpus = data;
     console.log(`Loaded ${corpus.length} algorithms`);
-    if (prefilledQ && groqKey) setTimeout(() => ask(prefilledQ), 300);
+    if (prefilledQ) setTimeout(() => ask(prefilledQ), 300);
   })
   .catch(e => {
     console.error('Failed to load corpus:', e);
     document.getElementById('corpusWarn').classList.remove('hidden');
   });
-
-// Show/hide key banner
-if (groqKey) document.getElementById('keyBanner').classList.add('hidden');
-else document.getElementById('apiKeyInput').value = '';
-if (localStorage.getItem('groq_key')) document.getElementById('rememberKey').checked = true;
-
-function saveKey() {
-  const key = document.getElementById('apiKeyInput').value.trim();
-  if (!key.startsWith('gsk_')) { alert('Invalid Groq API key — must start with gsk_'); return; }
-  groqKey = key;
-  if (document.getElementById('rememberKey').checked) {
-    localStorage.setItem('groq_key', key);
-    sessionStorage.removeItem('groq_key');
-  } else {
-    sessionStorage.setItem('groq_key', key);
-    localStorage.removeItem('groq_key');
-  }
-  document.getElementById('keyBanner').classList.add('hidden');
-}
 
 // Simple keyword search for relevant corpus entries
 function getContext(question) {
@@ -756,11 +727,6 @@ function addTyping() {
 
 async function ask(question) {
   if (!question.trim()) return;
-  if (!groqKey) {
-    document.getElementById('keyBanner').classList.remove('hidden');
-    document.getElementById('apiKeyInput').focus();
-    return;
-  }
 
   document.getElementById('question').value = '';
   document.getElementById('send').disabled = true;
@@ -782,8 +748,7 @@ Respond conversationally. Keep answers to 2-3 short paragraphs max. Lead with on
     const res = await fetch(GROQ_API, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${groqKey}`
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: MODEL,
