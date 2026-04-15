@@ -31,7 +31,8 @@
     color: var(--text);
     font-family: 'DM Sans', sans-serif;
     font-weight: 300;
-    min-height: 100vh;
+    height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -137,11 +138,11 @@
   /* Main layout */
   main {
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     position: relative;
     z-index: 1;
-    height: calc(100vh - 73px);
   }
 
   /* Chat area */
@@ -234,6 +235,7 @@
     font-family: 'DM Mono', monospace;
     font-size: 12px;
     padding: 8px 14px;
+    min-height: 40px;
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s;
@@ -507,47 +509,6 @@
     width: 100%;
   }
 
-  /* API key banner */
-  .key-banner {
-    background: rgba(201,168,76,0.08);
-    border-bottom: 1px solid rgba(201,168,76,0.2);
-    padding: 10px 32px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 13px;
-    color: var(--gold);
-    position: relative;
-    z-index: 10;
-  }
-
-  .key-banner input {
-    flex: 1;
-    max-width: 400px;
-    background: rgba(0,0,0,0.3);
-    border: 1px solid rgba(201,168,76,0.3);
-    border-radius: 6px;
-    padding: 6px 12px;
-    color: var(--gold);
-    font-family: 'DM Mono', monospace;
-    font-size: 12px;
-    outline: none;
-  }
-
-  .key-banner button {
-    background: rgba(201,168,76,0.15);
-    border: 1px solid rgba(201,168,76,0.3);
-    color: var(--gold);
-    padding: 6px 14px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-family: 'DM Mono', monospace;
-    transition: all 0.2s;
-  }
-
-  .key-banner button:hover { background: rgba(201,168,76,0.25); }
-
   .hidden { display: none !important; }
 
   @media (max-width: 600px) {
@@ -558,6 +519,27 @@
     .model-badge { display: none; }
     .input-footer { margin-top: 6px; }
     .input-hint { display: none; }
+    .suggestion { min-height: 44px; display: flex; align-items: center; }
+  }
+  /* Always show copy button on touch devices */
+  @media (hover: none) {
+    .copy-btn { opacity: 1; }
+  }
+  /* Respect user motion preferences */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+  /* Keyboard focus styles */
+  #send:focus-visible,
+  .clear-btn:focus-visible,
+  .suggestion:focus-visible,
+  .copy-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  #question:focus-visible {
+    border-color: var(--accent);
+    outline: none;
   }
 </style>
 </head>
@@ -565,7 +547,7 @@
 
 <header>
   <div class="logo">
-    <div class="logo-icon">⚷</div>
+    <div class="logo-icon" aria-hidden="true">⚷</div>
     <div class="logo-text">
       <span class="logo-name">Crypto Counsel</span>
       <span class="logo-sub">RAG · Llama 3.1 · Groq</span>
@@ -574,34 +556,34 @@
   <div class="header-right">
     <button class="clear-btn" onclick="clearChat()" title="Clear conversation">Clear</button>
     <span class="model-badge">llama-3.1-8b-instant</span>
-    <div class="status-dot" id="statusDot"></div>
+    <div class="status-dot" id="statusDot" aria-hidden="true"></div>
   </div>
 </header>
 
-<div class="corpus-warn hidden" id="corpusWarn">⚠ Failed to load algorithm corpus — answers will use general knowledge only</div>
+<div class="corpus-warn hidden" id="corpusWarn" role="alert">⚠ Failed to load algorithm corpus — answers will use general knowledge only</div>
 
 <main>
-  <div id="chat">
+  <div id="chat" role="log" aria-live="polite" aria-label="Chat messages">
     <div class="welcome" id="welcome">
-      <div class="welcome-sigil">⚷</div>
+      <div class="welcome-sigil" aria-hidden="true">⚷</div>
       <h1>Ask the <em>Counsel</em></h1>
       <p>An AI advisor trained on 97 cryptographic algorithms. Ask about security bits, use cases, post-quantum readiness, or which cipher to choose.</p>
       <div class="suggestions">
-        <div class="suggestion" onclick="ask(this.textContent)">What is AES-256-GCM and when should I use it?</div>
-        <div class="suggestion" onclick="ask(this.textContent)">Which algorithms are post-quantum safe?</div>
-        <div class="suggestion" onclick="ask(this.textContent)">Compare ChaCha20-Poly1305 vs AES-GCM</div>
-        <div class="suggestion" onclick="ask(this.textContent)">What is the best algorithm for mobile encryption?</div>
-        <div class="suggestion" onclick="ask(this.textContent)">Explain Kyber and lattice-based cryptography</div>
-        <div class="suggestion" onclick="ask(this.textContent)">What algorithms should I avoid in 2026?</div>
+        <button class="suggestion" onclick="ask(this.textContent)">What is AES-256-GCM and when should I use it?</button>
+        <button class="suggestion" onclick="ask(this.textContent)">Which algorithms are post-quantum safe?</button>
+        <button class="suggestion" onclick="ask(this.textContent)">Compare ChaCha20-Poly1305 vs AES-GCM</button>
+        <button class="suggestion" onclick="ask(this.textContent)">What is the best algorithm for mobile encryption?</button>
+        <button class="suggestion" onclick="ask(this.textContent)">Explain Kyber and lattice-based cryptography</button>
+        <button class="suggestion" onclick="ask(this.textContent)">What algorithms should I avoid in 2026?</button>
       </div>
     </div>
   </div>
 
   <div class="input-area">
     <div class="input-wrap">
-      <textarea id="question" placeholder="Ask about any cryptographic algorithm..." rows="1"></textarea>
-      <button id="send" onclick="submitQuestion()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <textarea id="question" placeholder="Ask about any cryptographic algorithm..." rows="1" aria-label="Ask a cryptography question"></textarea>
+      <button id="send" onclick="submitQuestion()" aria-label="Send message">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <path d="M5 12h14M12 5l7 7-7 7"/>
         </svg>
       </button>
@@ -773,14 +755,14 @@ Respond conversationally. Keep answers to 2-3 short paragraphs max. Lead with on
     bubble.textContent = '';
 
     const reader = res.body.getReader();
-    const decoder = new TextDecoder();
+    const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
     let text = '';
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       
-      const chunk = decoder.decode(value);
+      const chunk = decoder.decode(value, { stream: true });
       const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
       
       for (const line of lines) {
@@ -847,12 +829,12 @@ function clearChat() {
     <h1>Ask the <em>Counsel</em></h1>
     <p>An AI advisor trained on 97 cryptographic algorithms. Ask about security bits, use cases, post-quantum readiness, or which cipher to choose.</p>
     <div class="suggestions">
-      <div class="suggestion" onclick="ask(this.textContent)">What is AES-256-GCM and when should I use it?</div>
-      <div class="suggestion" onclick="ask(this.textContent)">Which algorithms are post-quantum safe?</div>
-      <div class="suggestion" onclick="ask(this.textContent)">Compare ChaCha20-Poly1305 vs AES-GCM</div>
-      <div class="suggestion" onclick="ask(this.textContent)">What is the best algorithm for mobile encryption?</div>
-      <div class="suggestion" onclick="ask(this.textContent)">Explain Kyber and lattice-based cryptography</div>
-      <div class="suggestion" onclick="ask(this.textContent)">What algorithms should I avoid in 2026?</div>
+      <button class="suggestion" onclick="ask(this.textContent)">What is AES-256-GCM and when should I use it?</button>
+      <button class="suggestion" onclick="ask(this.textContent)">Which algorithms are post-quantum safe?</button>
+      <button class="suggestion" onclick="ask(this.textContent)">Compare ChaCha20-Poly1305 vs AES-GCM</button>
+      <button class="suggestion" onclick="ask(this.textContent)">What is the best algorithm for mobile encryption?</button>
+      <button class="suggestion" onclick="ask(this.textContent)">Explain Kyber and lattice-based cryptography</button>
+      <button class="suggestion" onclick="ask(this.textContent)">What algorithms should I avoid in 2026?</button>
     </div>`;
   chat.appendChild(welcome);
 }
@@ -869,11 +851,6 @@ document.getElementById('question').addEventListener('keydown', e => {
 document.getElementById('question').addEventListener('input', function() {
   this.style.height = 'auto';
   this.style.height = Math.min(this.scrollHeight, 140) + 'px';
-});
-
-// API key input enter
-document.getElementById('apiKeyInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') saveKey();
 });
 
 // Support ?q= URL param for crypto-compare integration
