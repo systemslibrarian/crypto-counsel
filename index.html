@@ -610,15 +610,18 @@ const urlParams = new URLSearchParams(window.location.search);
 const prefilledQ = urlParams.get('q');
 
 // Load corpus
-fetch('corpus.json')
-  .then(r => r.json())
+fetch('./corpus.json')
+  .then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  })
   .then(data => {
     corpus = data;
     console.log(`Loaded ${corpus.length} algorithms`);
     if (prefilledQ) setTimeout(() => ask(prefilledQ), 300);
   })
   .catch(e => {
-    console.error('Failed to load corpus:', e);
+    console.error('Corpus load failed:', e.message);
     document.getElementById('corpusWarn').classList.remove('hidden');
   });
 
