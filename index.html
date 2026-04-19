@@ -900,7 +900,12 @@ RESPONSE FORMAT:
     const chat = document.getElementById('chat');
     const errDiv = document.createElement('div');
     errDiv.className = 'error-bubble';
-    errDiv.textContent = `Error: ${err.message}`;
+    const message = err && err.message ? err.message : 'Unknown error';
+    if (message === 'Failed to fetch') {
+      errDiv.textContent = 'Error: Unable to reach the API proxy. Check network connectivity and confirm the Worker route/CORS settings are deployed.';
+    } else {
+      errDiv.textContent = `Error: ${message}`;
+    }
     chat.appendChild(errDiv);
   } finally {
     document.getElementById('send').disabled = false;
