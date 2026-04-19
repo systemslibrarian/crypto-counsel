@@ -1,12 +1,16 @@
 export default {
   async fetch(request, env) {
+    const allowedOrigin = 'https://crypto-counsel.systemslibrarian.dev';
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': allowedOrigin,
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Vary': 'Origin',
+    };
+
     if (request.method === 'OPTIONS') {
       return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        }
+        headers: corsHeaders
       });
     }
 
@@ -30,7 +34,7 @@ export default {
     return new Response(result, {
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        ...corsHeaders,
       }
     });
   }
