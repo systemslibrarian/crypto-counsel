@@ -2,22 +2,22 @@
 
 **AI Cryptography Advisor** — ask questions about cryptographic algorithms and get concise, expert answers powered by Groq (Llama 3.1 8B Instant) with a local RAG corpus of 97 algorithms.
 
-**Live site:** <https://systemslibrarian.github.io/crypto-counsel/>
+**Live site:** <https://crypto-counsel.systemslibrarian.dev>
 
 ## Features
 
 - **RAG-powered answers** — a local `corpus.json` of 97 cryptographic algorithms is searched at query time and injected into the system prompt for grounded responses.
 - **Streaming chat UI** — single-file `index.html` app with real-time token streaming via the Groq API (proxied through a Cloudflare Worker).
 - **Inline ecosystem links** — AI responses include clickable links to two companion sites:
-  - [**crypto-compare**](https://systemslibrarian.github.io/crypto-compare/) — reference catalog filtered by category (`?cat=symmetric`, `?cat=kem`, etc.)
-  - [**crypto-lab**](https://systemslibrarian.github.io/crypto-lab-aes-modes/) — live browser demos for specific algorithms (e.g. `crypto-lab-aes-modes`, `crypto-lab-kyber-vault`)
+  - [**crypto-compare**](https://crypto-compare.systemslibrarian.dev/) — reference catalog filtered by category (`?cat=symmetric`, `?cat=kem`, etc.)
+  - [**crypto-lab**](https://crypto-lab.systemslibrarian.dev/aes-modes/) — live browser demos for specific algorithms (e.g. `aes-modes`, `kyber-vault`)
 - **Markdown rendering** — bold, italic, inline code, lists, and `[text](url)` links are rendered in AI responses.
 - **URL query support** — link to the app with a pre-filled question via `?q=your+question`.
 
 ## Architecture
 
 ```
-index.html          Single-file front-end (GitHub Pages)
+index.html          Single-file front-end
 corpus.json         RAG corpus — 97 algorithm entries
 worker/             Cloudflare Worker proxy for Groq API
   index.js
@@ -30,8 +30,8 @@ The system prompt instructs the model to include links to these sites when relev
 
 | Site | URL pattern | Example |
 |------|-------------|---------|
-| crypto-compare | `https://systemslibrarian.github.io/crypto-compare/?cat={category}` | `?cat=symmetric` |
-| crypto-lab | `https://systemslibrarian.github.io/crypto-lab-{slug}/` | `crypto-lab-aes-modes` |
+| crypto-compare | `https://crypto-compare.systemslibrarian.dev/?cat={category}` | `?cat=symmetric` |
+| crypto-lab | `https://crypto-lab.systemslibrarian.dev/{slug}/` | `aes-modes` |
 
 **Category slugs:** `symmetric`, `kem`, `signatures`, `hash`, `kdf`, `mac`, `secret-sharing`, `zkp`, `steganography`, `csprng`, `password-hashing`, `homomorphic`, `mpc`, `asymmetric`, `threshold`
 
