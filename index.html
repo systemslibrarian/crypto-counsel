@@ -600,7 +600,8 @@
 </main>
 
 <script>
-const GROQ_API = 'https://api.crypto-counsel.systemslibrarian.dev';
+const GROQ_API_PRIMARY = 'https://api.crypto-counsel.systemslibrarian.dev';
+const GROQ_API_FALLBACK = 'https://crypto-counsel-proxy.systemslibrarian.workers.dev';
 const MODEL = 'llama-3.1-8b-instant';
 let corpus = [];
 let conversationHistory = [];
@@ -823,23 +824,36 @@ RESPONSE FORMAT:
 - Include links inline, not as a footer dump`;
 
   try {
-    const res = await fetch(GROQ_API, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...conversationHistory.slice(-6),
-          { role: 'user', content: question }
-        ],
-        stream: true,
-        max_tokens: 1024,
-        temperature: 0.3
-      })
-    });
+    const payload = {
+      model: MODEL,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...conversationHistory.slice(-6),
+        { role: 'user', content: question }
+      ],
+      stream: true,
+      max_tokens: 1024,
+      temperature: 0.3
+    };
+
+    let res;
+    try {
+      res = await fetch(GROQ_API_PRIMARY, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+    } catch (primaryErr) {
+      res = await fetch(GROQ_API_FALLBACK, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+    }
 
     if (!res.ok) {
       const err = await res.json();

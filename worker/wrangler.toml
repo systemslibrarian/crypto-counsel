@@ -1,6 +1,7 @@
 name = "crypto-counsel-proxy"
 main = "index.js"
 compatibility_date = "2024-01-01"
+workers_dev = true
 
 [[routes]]
 pattern = "api.crypto-counsel.systemslibrarian.dev"
