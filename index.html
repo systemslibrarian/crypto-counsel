@@ -657,6 +657,11 @@ function renderMarkdown(text) {
     /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;word-break:break-all;">$1</a>'
   );
+  // Also linkify plain URLs so responses remain clickable even without markdown syntax.
+  html = html.replace(
+    /(^|[\s(>])((https?:\/\/)[^\s<)]+)(?=$|[\s<),.!?])/g,
+    '$1<a href="$2" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;word-break:break-all;">$2</a>'
+  );
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
   html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
@@ -735,14 +740,18 @@ async function ask(question) {
   const typingEl = addTyping();
 
   const systemPrompt = `You are Crypto Counsel, a cryptography advisor for systemslibrarian's education platform.
-  
-LINKS: Add inline markdown links when relevant.
-crypto-compare: https://crypto-compare.systemslibrarian.dev/?cat=SLUG — slugs: symmetric,kem,signatures,hash,kdf,mac,secret-sharing,zkp,steganography,csprng,password-hashing,homomorphic,mpc,asymmetric,threshold
-crypto-lab demo: https://crypto-lab.systemslibrarian.dev/SLUG/ — slugs: aes-modes,kyber-vault,dilithium-seal,sphincs-ledger,ratchet-wire,shamir-gate,hybrid-wire,zk-proof-lab,shadow-vault,phantom-vault,blind-oracle,patron-shield,padding-oracle,rsa-forge,mac-race,kdf-chain,timing-oracle,falcon-seal,hqc-vault,mceliece-gate,bike-vault,bcrypt-forge,pki-chain,ring-sign,threshold-decrypt,blind-sign,commit-gate,protocol-compose,format-ward,noise-pipe,curve-lens,frost-threshold,x3dh-wire,babel-hash,silent-tally,dead-sea-cipher,iron-serpent,biham-lens,corrupted-oracle,quantum-vault-kpqc,iron-letter,steg-arena
-Only use slugs from those lists. Never link to the crypto-lab root — always a specific demo slug.
-  
+
+LINK RULES:
+- Include clickable markdown links when relevant.
+- crypto-compare format: https://crypto-compare.systemslibrarian.dev/?cat=<category>
+  categories: symmetric, kem, signatures, hash, kdf, mac, secret-sharing, zkp, steganography, csprng, password-hashing, homomorphic, mpc, asymmetric, threshold
+- crypto-lab format: https://crypto-lab.systemslibrarian.dev/<demo-slug>/
+  demo slugs: aes-modes, kyber-vault, dilithium-seal, sphincs-ledger, ratchet-wire, shamir-gate, hybrid-wire, zk-proof-lab, shadow-vault, phantom-vault, blind-oracle, patron-shield, padding-oracle, rsa-forge, mac-race, kdf-chain, timing-oracle, falcon-seal, hqc-vault, mceliece-gate, bike-vault, bcrypt-forge, pki-chain, ring-sign, threshold-decrypt, blind-sign, commit-gate, protocol-compose, format-ward, noise-pipe, curve-lens, frost-threshold, x3dh-wire, babel-hash, silent-tally, dead-sea-cipher, iron-serpent, biham-lens, corrupted-oracle, quantum-vault-kpqc, iron-letter, steg-arena
+- Never output placeholder text like "SLUG". Always output a complete real URL.
+- Never link to the crypto-lab root; always link to a specific demo page.
+
 CONTEXT: ${context || 'No matched data — use general knowledge.'}
-  
+
 FORMAT: One direct sentence first. 2-3 short paragraphs max. Bullet list only if 3+ items. Be concise.`;
 
   try {
