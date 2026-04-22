@@ -649,19 +649,47 @@ function getContext(question) {
       .join('\n---\n');
 }
 
+function normalizeOutboundUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+
+    if (url.origin === 'https://crypto-compare.systemslibrarian.dev') {
+      const category = (
+        url.searchParams.get('cat') ||
+        url.searchParams.get('category') ||
+        url.hash.replace(/^#/, '')
+      ).trim().toLowerCase();
+
+      url.pathname = '/';
+      url.hash = '';
+      url.search = '';
+
+      if (category) {
+        url.searchParams.set('cat', category);
+      }
+
+      return url.toString();
+    }
+
+    return rawUrl;
+  } catch {
+    return rawUrl;
+  }
+}
+
 function renderMarkdown(text) {
   // Escape HTML entities before any markdown processing to prevent XSS from model output
   text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   // Links must be processed before emphasis replacements touch bracket content.
-  let html = text.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;word-break:break-all;">$1</a>'
-  );
+  let html = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, (_, label, url) => {
+    const normalizedUrl = normalizeOutboundUrl(url);
+    return '<a href="' + normalizedUrl + '" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;word-break:break-all;">' + label + '</a>';
+  });
   // Also linkify plain URLs so responses remain clickable even without markdown syntax.
-  html = html.replace(
-    /(^|[\s(>])((https?:\/\/)[^\s<)]+)(?=$|[\s<),.!?])/g,
-    '$1<a href="$2" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;word-break:break-all;">$2</a>'
-  );
+  html = html.replace(/(^|[\s(>])((https?:\/\/)[^\s<)]+)(?=$|[\s<),.!?])/g, (_, prefix, url) => {
+    const normalizedUrl = normalizeOutboundUrl(url);
+    return prefix + '<a href="' + normalizedUrl + '" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;word-break:break-all;">' + normalizedUrl + '</a>';
+  });
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
   html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
@@ -743,8 +771,9 @@ async function ask(question) {
 
 LINK RULES:
 - Include clickable markdown links when relevant.
-- crypto-compare format: https://crypto-compare.systemslibrarian.dev
-  Do not add query parameters like ?cat=...
+- crypto-compare format: https://crypto-compare.systemslibrarian.dev/?cat=<category>
+  category slugs: symmetric, kem, signatures, hash, kdf, mac, secret-sharing, zkp, steganography, csprng, password-hashing, homomorphic, mpc, asymmetric, threshold
+  if no category is clearly relevant, use https://crypto-compare.systemslibrarian.dev/
 - crypto-lab format: https://crypto-lab.systemslibrarian.dev/<demo-slug>/
   demo slugs: aes-modes, kyber-vault, dilithium-seal, sphincs-ledger, ratchet-wire, shamir-gate, hybrid-wire, zk-proof-lab, shadow-vault, phantom-vault, blind-oracle, patron-shield, padding-oracle, rsa-forge, mac-race, kdf-chain, timing-oracle, falcon-seal, hqc-vault, mceliece-gate, bike-vault, bcrypt-forge, pki-chain, ring-sign, threshold-decrypt, blind-sign, commit-gate, protocol-compose, format-ward, noise-pipe, curve-lens, frost-threshold, x3dh-wire, babel-hash, silent-tally, dead-sea-cipher, iron-serpent, biham-lens, corrupted-oracle, quantum-vault-kpqc, iron-letter, steg-arena
 - Never output placeholder text like "SLUG". Always output a complete real URL.
