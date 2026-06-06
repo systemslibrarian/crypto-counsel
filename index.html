@@ -361,6 +361,40 @@
   .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
   .copy-btn.copied { border-color: var(--accent); color: var(--accent); opacity: 1; }
 
+  /* Source citations */
+  .sources {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .sources-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-right: 4px;
+  }
+  .source-chip {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    background: var(--surface2);
+    text-decoration: none;
+    transition: all 0.15s;
+  }
+  a.source-chip:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
   /* Clear chat button */
   .clear-btn {
     background: none;
@@ -572,14 +606,7 @@
       <div class="welcome-sigil" aria-hidden="true">⚷</div>
       <h1>Ask the <em>Counsel</em></h1>
       <p>An AI advisor trained on 97 cryptographic algorithms. Ask about security bits, use cases, post-quantum readiness, or which cipher to choose.</p>
-      <div class="suggestions">
-        <button class="suggestion" onclick="ask(this.textContent)">What is AES-256-GCM and when should I use it?</button>
-        <button class="suggestion" onclick="ask(this.textContent)">Which algorithms are post-quantum safe?</button>
-        <button class="suggestion" onclick="ask(this.textContent)">Compare ChaCha20-Poly1305 vs AES-GCM</button>
-        <button class="suggestion" onclick="ask(this.textContent)">What is the best algorithm for mobile encryption?</button>
-        <button class="suggestion" onclick="ask(this.textContent)">Explain Kyber and lattice-based cryptography</button>
-        <button class="suggestion" onclick="ask(this.textContent)">What algorithms should I avoid in 2026?</button>
-      </div>
+      <div class="suggestions" id="suggestions"></div>
     </div>
   </div>
 
@@ -603,12 +630,126 @@
 const GROQ_API_PRIMARY = 'https://api.crypto-counsel.systemslibrarian.dev';
 const GROQ_API_FALLBACK = 'https://crypto-counsel-proxy.systemslibrarian.workers.dev';
 const MODEL = 'llama-3.1-8b-instant';
+const STORAGE_KEY_HISTORY = 'cc-history-v1';
+const STORAGE_KEY_DISPLAY = 'cc-display-v1';
+const MAX_DISPLAY_MESSAGES = 50;
+
 let corpus = [];
-let conversationHistory = [];
+let docTokens = [];           // per-doc Set<string> of tokens, for IDF scoring
+let docTitles = [];           // per-doc display title
+let docCategories = [];       // per-doc category (algorithm entries only)
+let idf = Object.create(null);
+let conversationHistory = []; // last 12 model-facing messages
+let displayMessages = [];     // full UI history {role, content, sources?}
+
+// Synonym expansion for domain-specific recall. Cheap, hand-tuned, beats
+// substring search by a lot on intent queries like "what cipher for mobile?".
+const SYNONYMS = {
+  cipher: ['aes', 'chacha20', 'symmetric', 'aead', 'gcm', 'poly1305'],
+  ciphers: ['aes', 'chacha20', 'symmetric', 'aead'],
+  mobile: ['chacha20', 'wireguard', 'chacha20poly'],
+  hardware: ['aes-ni', 'aes256gcm'],
+  fast: ['chacha20', 'aes-ni', 'blake3', 'aes256gcm'],
+  signature: ['ecdsa', 'eddsa', 'ed25519', 'ml-dsa', 'dilithium', 'slh-dsa', 'sphincs', 'falcon'],
+  signatures: ['ecdsa', 'eddsa', 'ed25519', 'ml-dsa', 'dilithium', 'slh-dsa', 'sphincs', 'falcon'],
+  signing: ['ecdsa', 'eddsa', 'ed25519', 'ml-dsa', 'dilithium'],
+  exchange: ['ecdh', 'x25519', 'ml-kem', 'kyber', 'hpke'],
+  kem: ['kyber', 'ml-kem', 'hqc', 'mceliece', 'frodokem', 'bike', 'mlkem768'],
+  hash: ['sha-256', 'sha-3', 'blake3', 'blake2b'],
+  hashing: ['sha-256', 'sha-3', 'blake3', 'blake2b'],
+  password: ['argon2', 'argon2id', 'bcrypt', 'scrypt', 'pbkdf2'],
+  random: ['hmac-drbg', 'ctr-drbg', 'chacha20-drbg', 'fortuna'],
+  randomness: ['hmac-drbg', 'ctr-drbg', 'fortuna'],
+  pq: ['post-quantum', 'pqc', 'ml-kem', 'kyber', 'ml-dsa', 'dilithium', 'sphincs', 'falcon', 'lattice'],
+  pqc: ['post-quantum', 'ml-kem', 'kyber', 'ml-dsa', 'dilithium', 'sphincs', 'falcon'],
+  quantum: ['post-quantum', 'pq', 'kyber', 'dilithium', 'shor', 'grover'],
+  kyber: ['ml-kem', 'mlkem768', 'mlkem1024'],
+  dilithium: ['ml-dsa', 'crystals-dilithium'],
+  sphincs: ['slh-dsa'],
+  tls: ['aes-gcm', 'chacha20', 'x25519', 'ml-kem', 'hybrid'],
+  messaging: ['signal', 'x3dh', 'double-ratchet', 'mls', 'ratchet-wire'],
+  blockchain: ['secp256k1', 'ecdsa', 'schnorr', 'bls'],
+  threshold: ['shamir', 'frost', 'gg20', 'feldman', 'pedersen', 'bls_threshold'],
+  zk: ['zkp', 'bulletproofs', 'snark', 'stark', 'plonk', 'groth16'],
+  zkp: ['zk', 'bulletproofs', 'snark', 'stark'],
+  zero: ['zk', 'zkp', 'bulletproofs', 'snark', 'stark'],
+  knowledge: ['zk', 'zkp'],
+  kdf: ['hkdf', 'argon2', 'pbkdf2', 'scrypt', 'bcrypt'],
+  mac: ['hmac', 'poly1305', 'cmac', 'gmac'],
+  homomorphic: ['bfv', 'bgv', 'ckks', 'tfhe', 'fhe'],
+  fhe: ['bfv', 'bgv', 'ckks', 'tfhe', 'homomorphic'],
+  mpc: ['garbled', 'oblivious', 'gmw', 'aby', 'spdz'],
+  steganography: ['stego', 'bpcs', 'lsb', 'f5'],
+  curve: ['curve25519', 'p-256', 'p256', 'secp256k1', 'ed25519'],
+  ecc: ['curve25519', 'p-256', 'p384', 'ed25519', 'ecdh', 'ecdsa'],
+  rsa: ['rsa-oaep', 'rsa-pss', 'rsa-2048', 'rsa-4096'],
+  authenticated: ['aead', 'aes256gcm', 'chacha20poly'],
+  aead: ['aes256gcm', 'chacha20poly', 'xchacha20poly', 'aegis'],
+};
 
 // URL params declared early so corpus load callback can reference prefilledQ
 const urlParams = new URLSearchParams(window.location.search);
 const prefilledQ = urlParams.get('q');
+
+function tokenize(s) {
+  const raw = s.toLowerCase()
+    .replace(/[^a-z0-9\-_]+/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2);
+  const out = new Set();
+  for (const w of raw) {
+    out.add(w);
+    if (w.includes('-') || w.includes('_')) {
+      // De-hyphenated form so 'ml-kem-768' also matches 'mlkem768'.
+      out.add(w.replace(/[\-_]/g, ''));
+      // Sub-parts so 'aes-256-gcm' also matches 'aes', 'gcm'.
+      for (const part of w.split(/[\-_]+/)) {
+        if (part.length > 2) out.add(part);
+      }
+    }
+  }
+  return [...out];
+}
+
+function expandQuery(tokens) {
+  const out = new Set(tokens);
+  for (const t of tokens) {
+    const syns = SYNONYMS[t];
+    if (syns) for (const s of syns) out.add(s);
+    // Strip trailing 's' for plural fallback
+    if (t.endsWith('s') && t.length > 3) out.add(t.slice(0, -1));
+  }
+  return [...out];
+}
+
+function extractTitle(doc) {
+  if (doc.id.startsWith('demo_crypto_lab_')) {
+    const m = doc.text.match(/^# (.+)$/m);
+    if (m) return m[1].trim();
+    return doc.id.replace('demo_crypto_lab_', '').replace(/_/g, '-');
+  }
+  const m = doc.text.match(/^Algorithm:\s*(.+)$/m);
+  if (m) return m[1].trim();
+  return doc.id;
+}
+
+function extractCategory(doc) {
+  const m = doc.text.match(/^Category:\s*(.+)$/m);
+  return m ? m[1].trim().toLowerCase() : '';
+}
+
+function buildIndex() {
+  docTokens = corpus.map(d => new Set(tokenize(d.text)));
+  docTitles = corpus.map(extractTitle);
+  docCategories = corpus.map(extractCategory);
+  const N = corpus.length;
+  const df = Object.create(null);
+  for (const set of docTokens) for (const t of set) df[t] = (df[t] || 0) + 1;
+  idf = Object.create(null);
+  for (const t in df) {
+    idf[t] = Math.log(1 + (N - df[t] + 0.5) / (df[t] + 0.5));
+  }
+}
 
 // Load corpus
 fetch('./corpus.json')
@@ -618,7 +759,8 @@ fetch('./corpus.json')
   })
   .then(data => {
     corpus = data;
-    console.log(`Loaded ${corpus.length} algorithms`);
+    buildIndex();
+    console.log(`Loaded ${corpus.length} corpus entries (${Object.keys(idf).length} terms)`);
     if (prefilledQ) setTimeout(() => ask(prefilledQ), 300);
   })
   .catch(e => {
@@ -626,27 +768,33 @@ fetch('./corpus.json')
     document.getElementById('corpusWarn').classList.remove('hidden');
   });
 
-// Simple keyword search for relevant corpus entries
+// IDF-weighted retrieval with synonym expansion.
 function getContext(question) {
-  const q = question.toLowerCase();
-  const words = q.split(/\s+/).filter(w => w.length > 3);
-  
-  const scored = corpus.map(doc => {
-    const text = doc.text.toLowerCase();
+  if (!corpus.length) return { text: '', sources: [] };
+  const baseTokens = tokenize(question);
+  const tokens = expandQuery(baseTokens);
+  const qLower = question.toLowerCase();
+
+  const scored = corpus.map((doc, i) => {
+    const inDoc = docTokens[i];
     let score = 0;
-    words.forEach(w => { if (text.includes(w)) score++; });
-    // Boost if the question mentions this algorithm by id
-    if (q.includes(doc.id.toLowerCase())) score += 3;
-    return { ...doc, score };
+    for (const t of tokens) {
+      if (inDoc.has(t)) score += idf[t] || 0;
+    }
+    if (qLower.includes(doc.id.toLowerCase())) score += 5;
+    if (docTitles[i] && qLower.includes(docTitles[i].toLowerCase())) score += 4;
+    // Penalize directory-style entries — they match everything because they
+    // list every category, but rarely answer a specific question.
+    if (doc.id === 'crypto_lab_readme' || doc.id === 'crypto_compare_readme') score *= 0.4;
+    return { id: doc.id, text: doc.text, title: docTitles[i], score };
   });
 
-    const MAX_CHUNK = 600;
-    return scored
-      .filter(d => d.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 3)
-      .map(d => d.text.length > MAX_CHUNK ? d.text.slice(0, MAX_CHUNK) + '...' : d.text)
-      .join('\n---\n');
+  const top = scored.filter(d => d.score > 0).sort((a, b) => b.score - a.score).slice(0, 5);
+  const MAX_CHUNK = 600;
+  const text = top
+    .map(d => d.text.length > MAX_CHUNK ? d.text.slice(0, MAX_CHUNK) + '...' : d.text)
+    .join('\n---\n');
+  return { text, sources: top.map(d => ({ id: d.id, title: d.title })) };
 }
 
 function normalizeOutboundUrl(rawUrl) {
@@ -757,14 +905,148 @@ function addTyping() {
   return div;
 }
 
+function sourceChipHref(src) {
+  if (src.id.startsWith('demo_crypto_lab_')) {
+    const slug = src.id.replace('demo_crypto_lab_', '').replace(/_/g, '-');
+    if (slug === 'steg-arena') return 'https://systemslibrarian.github.io/steg-arena/';
+    return `https://systemslibrarian.github.io/crypto-lab-${slug}/`;
+  }
+  // Algorithm entry — link to crypto-compare, by category when known
+  const idx = corpus.findIndex(d => d.id === src.id);
+  const cat = idx >= 0 ? docCategories[idx] : '';
+  const base = 'https://crypto-compare.systemslibrarian.dev/';
+  return cat ? `${base}?cat=${encodeURIComponent(cat)}` : base;
+}
+
+function renderSourcesInto(bubble, sources) {
+  if (!sources || !sources.length) return;
+  const row = document.createElement('div');
+  row.className = 'sources';
+  const label = document.createElement('span');
+  label.className = 'sources-label';
+  label.textContent = 'Sources';
+  row.appendChild(label);
+  for (const src of sources) {
+    const href = sourceChipHref(src);
+    const a = document.createElement('a');
+    a.className = 'source-chip';
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = src.title || src.id;
+    row.appendChild(a);
+  }
+  bubble.appendChild(row);
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(conversationHistory));
+    localStorage.setItem(STORAGE_KEY_DISPLAY, JSON.stringify(displayMessages.slice(-MAX_DISPLAY_MESSAGES)));
+  } catch (e) { /* quota / private mode — non-fatal */ }
+}
+
+function loadState() {
+  try {
+    const h = localStorage.getItem(STORAGE_KEY_HISTORY);
+    const d = localStorage.getItem(STORAGE_KEY_DISPLAY);
+    if (h) conversationHistory = JSON.parse(h) || [];
+    if (d) displayMessages = JSON.parse(d) || [];
+  } catch (e) {
+    conversationHistory = [];
+    displayMessages = [];
+  }
+}
+
+function rehydrate() {
+  if (!displayMessages.length) return;
+  const welcome = document.getElementById('welcome');
+  if (welcome) welcome.remove();
+  for (const msg of displayMessages) {
+    const bubble = addMessage(msg.role, '');
+    if (msg.role === 'counsel' || msg.role === 'assistant') {
+      bubble.innerHTML = renderMarkdown(msg.content);
+      renderSourcesInto(bubble, msg.sources);
+      attachCopyButton(bubble, msg.content);
+    } else {
+      bubble.textContent = msg.content;
+    }
+  }
+}
+
+function attachCopyButton(bubble, text) {
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'copy-btn';
+  copyBtn.textContent = 'copy';
+  copyBtn.onclick = () => {
+    navigator.clipboard.writeText(text).then(() => {
+      copyBtn.textContent = 'copied';
+      copyBtn.classList.add('copied');
+      setTimeout(() => { copyBtn.textContent = 'copy'; copyBtn.classList.remove('copied'); }, 2000);
+    });
+  };
+  bubble.appendChild(copyBtn);
+}
+
+const SUGGESTION_POOL = [
+  'What is AES-256-GCM and when should I use it?',
+  'Which algorithms are post-quantum safe?',
+  'Compare ChaCha20-Poly1305 vs AES-GCM',
+  'What is the best algorithm for mobile encryption?',
+  'Explain Kyber and lattice-based cryptography',
+  'What algorithms should I avoid in 2026?',
+  'How does Ed25519 differ from ECDSA?',
+  'What is hybrid post-quantum TLS?',
+  'When should I use Argon2id vs bcrypt?',
+  'Explain the harvest-now-decrypt-later threat',
+  'What is FROST threshold signing?',
+  'Compare ML-KEM vs HQC for key encapsulation',
+  'How does TreeKEM secure MLS group chats?',
+  'What is the Hidden Number Problem in ECDSA?',
+  'When are stateful hash-based signatures appropriate?',
+  'Explain Bulletproofs and confidential transactions',
+  'What is the AEGIS family of AEADs?',
+  'When should I pick XChaCha20-Poly1305 over ChaCha20-Poly1305?',
+  'What is envelope encryption and how does KMS use it?',
+  'How does Shamir secret sharing work?',
+  'What broke in Kyberslash and how was it fixed?',
+  'Explain forward secrecy in the Signal protocol',
+  'What is the Lowe attack on Needham-Schroeder?',
+  'Compare lattice vs code-based post-quantum KEMs',
+];
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function renderSuggestions() {
+  const container = document.getElementById('suggestions');
+  if (!container) return;
+  container.innerHTML = '';
+  const picks = shuffle(SUGGESTION_POOL).slice(0, 6);
+  for (const q of picks) {
+    const b = document.createElement('button');
+    b.className = 'suggestion';
+    b.textContent = q;
+    b.addEventListener('click', () => ask(q));
+    container.appendChild(b);
+  }
+}
+
 async function ask(question) {
   if (!question.trim()) return;
 
   document.getElementById('question').value = '';
   document.getElementById('send').disabled = true;
   addMessage('user', question);
+  displayMessages.push({ role: 'user', content: question });
 
-  const context = getContext(question);
+  const { text: context, sources } = getContext(question);
   const typingEl = addTyping();
 
   const systemPrompt = `You are Crypto Counsel, a cryptography advisor for systemslibrarian's education platform.
@@ -775,7 +1057,7 @@ LINK RULES:
   category slugs: symmetric, kem, signatures, hash, kdf, mac, secret-sharing, zkp, steganography, csprng, password-hashing, homomorphic, mpc, asymmetric, threshold
   if no category is clearly relevant, use https://crypto-compare.systemslibrarian.dev/
 - crypto-lab format: https://systemslibrarian.github.io/crypto-lab-<demo-slug>/
-  demo slugs: aes-modes, kyber-vault, dilithium-seal, sphincs-ledger, ratchet-wire, shamir-gate, hybrid-wire, zk-proof-lab, shadow-vault, phantom-vault, blind-oracle, patron-shield, padding-oracle, rsa-forge, mac-race, kdf-chain, timing-oracle, falcon-seal, hqc-vault, mceliece-gate, bike-vault, bcrypt-forge, pki-chain, ring-sign, threshold-decrypt, blind-sign, commit-gate, protocol-compose, format-ward, noise-pipe, curve-lens, frost-threshold, x3dh-wire, babel-hash, silent-tally, dead-sea-cipher, iron-serpent, biham-lens, corrupted-oracle, quantum-vault-kpqc, iron-letter
+  demo slugs: aegis-gate, aes-modes, ascon, babel-hash, bb84, bcrypt-forge, biham-lens, bike-vault, blind-oracle, blind-sign, bulletproofs, chacha20-stream, ckks-lab, commit-gate, corrupted-oracle, curve-lens, curve448, dead-sea-cipher, dilithium-reject, dilithium-seal, drbg-arena, ecdsa-forge, ed25519-forge, elgamal-plain, envelope-kms, falcon-seal, fhe-arena, format-ward, frodo-vault, frost-threshold, garbled-gate, gg20-wallet, grover, harvest-timeline, harvest-vault, hash-zoo, hawk, hqc-timing-break, hqc-vault, hybrid-sign, hybrid-wire, ibe-gate, iron-letter, iron-serpent, isogeny-gate, j-uniward, kdf-arena, kdf-chain, kerberos, kyber-vault, kyberslash, lattice-fault, lll-break, lms-ledger, lms-xmss, mac-race, mceliece-gate, merkle-vault, mls-group, model-breach, mpcith-sign, noise-pipe, nonce-guard, nonce-lattice, ntru-classic, oblivious-shelf, opaque-gate, oram-vault, ot-gate, padding-oracle, paillier-gate, pairing-gate, patron-shield, phantom-vault, pki-chain, poly1305-mac, pq-rotation, pq-tls-handshake, protocol-compose, psi-gate, quantum-vault-kpqc, ratchet-wire, ring-sign, rsa-forge, scloud-vault, shadow-vault, shamir-gate, shor, silent-tally, snark-arena, sphincs-ledger, stark-tower, stego-suite, threshold-decrypt, threshold-mldsa, timing-oracle, vrf-gate, vss-gate, world-ciphers, world-hashes, x3dh-wire, zk-proof-lab
   exception: steg-arena → https://systemslibrarian.github.io/steg-arena/
 - Never output placeholder text like "SLUG". Always output a complete real URL.
 - Never link to the crypto-lab root; always link to a specific demo page.
@@ -850,25 +1132,20 @@ FORMAT: One direct sentence first. 2-3 short paragraphs max. Bullet list only if
     }
 
     bubble.innerHTML = renderMarkdown(text);
+    renderSourcesInto(bubble, sources);
+    attachCopyButton(bubble, text);
     document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
 
-    // Update conversation history (keep last 6 exchanges)
+    // Model-facing history (keep last 6 exchanges)
     conversationHistory.push({ role: 'user', content: question });
     conversationHistory.push({ role: 'assistant', content: text });
     if (conversationHistory.length > 12) conversationHistory = conversationHistory.slice(-12);
 
-    // Add copy button
-    const copyBtn = document.createElement('button');
-    copyBtn.className = 'copy-btn';
-    copyBtn.textContent = 'copy';
-    copyBtn.onclick = () => {
-      navigator.clipboard.writeText(text).then(() => {
-        copyBtn.textContent = 'copied';
-        copyBtn.classList.add('copied');
-        setTimeout(() => { copyBtn.textContent = 'copy'; copyBtn.classList.remove('copied'); }, 2000);
-      });
-    };
-    bubble.appendChild(copyBtn);
+    displayMessages.push({ role: 'counsel', content: text, sources });
+    if (displayMessages.length > MAX_DISPLAY_MESSAGES) {
+      displayMessages = displayMessages.slice(-MAX_DISPLAY_MESSAGES);
+    }
+    saveState();
 
   } catch (err) {
     typingEl.remove();
@@ -895,6 +1172,11 @@ function submitQuestion() {
 
 function clearChat() {
   conversationHistory = [];
+  displayMessages = [];
+  try {
+    localStorage.removeItem(STORAGE_KEY_HISTORY);
+    localStorage.removeItem(STORAGE_KEY_DISPLAY);
+  } catch (e) { /* non-fatal */ }
   const chat = document.getElementById('chat');
   chat.innerHTML = '';
   const welcome = document.createElement('div');
@@ -904,15 +1186,9 @@ function clearChat() {
     <div class="welcome-sigil">⚷</div>
     <h1>Ask the <em>Counsel</em></h1>
     <p>An AI advisor trained on 97 cryptographic algorithms. Ask about security bits, use cases, post-quantum readiness, or which cipher to choose.</p>
-    <div class="suggestions">
-      <button class="suggestion" onclick="ask(this.textContent)">What is AES-256-GCM and when should I use it?</button>
-      <button class="suggestion" onclick="ask(this.textContent)">Which algorithms are post-quantum safe?</button>
-      <button class="suggestion" onclick="ask(this.textContent)">Compare ChaCha20-Poly1305 vs AES-GCM</button>
-      <button class="suggestion" onclick="ask(this.textContent)">What is the best algorithm for mobile encryption?</button>
-      <button class="suggestion" onclick="ask(this.textContent)">Explain Kyber and lattice-based cryptography</button>
-      <button class="suggestion" onclick="ask(this.textContent)">What algorithms should I avoid in 2026?</button>
-    </div>`;
+    <div class="suggestions" id="suggestions"></div>`;
   chat.appendChild(welcome);
+  renderSuggestions();
 }
 
 // Keyboard handling
@@ -932,6 +1208,14 @@ document.getElementById('question').addEventListener('input', function() {
 // Support ?q= URL param for crypto-compare integration
 if (prefilledQ) {
   document.getElementById('question').value = prefilledQ;
+}
+
+// Boot: restore saved conversation (if any) or seed fresh suggestions.
+loadState();
+if (displayMessages.length) {
+  rehydrate();
+} else {
+  renderSuggestions();
 }
 </script>
 </body>

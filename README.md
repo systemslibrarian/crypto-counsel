@@ -18,9 +18,13 @@
 
 ```
 index.html          Single-file front-end
-corpus.json         RAG corpus — 97 algorithm entries
+corpus.json         RAG corpus — 97 algorithm entries + crypto-lab demo cards
+algorithms.ts       Canonical, richly-typed algorithm metadata (source of truth
+                    behind the algorithm slice of corpus.json; not imported at
+                    runtime)
 worker/             Cloudflare Worker proxy for Groq API
-  index.js
+  index.js          Streams Groq responses through to the client; rate-limited
+                    per IP via a Cloudflare Rate Limiting binding
   wrangler.toml
 ```
 
@@ -35,7 +39,7 @@ The system prompt instructs the model to include links to these sites when relev
 
 **Category slugs:** `symmetric`, `kem`, `signatures`, `hash`, `kdf`, `mac`, `secret-sharing`, `zkp`, `steganography`, `csprng`, `password-hashing`, `homomorphic`, `mpc`, `asymmetric`, `threshold`
 
-**Demo slugs:** `aes-modes`, `kyber-vault`, `dilithium-seal`, `sphincs-ledger`, `ratchet-wire`, `shamir-gate`, `hybrid-wire`, `zk-proof-lab`, `shadow-vault`, `phantom-vault`, `blind-oracle`, `patron-shield`, `padding-oracle`, `rsa-forge`, `mac-race`, `kdf-chain`, `timing-oracle`, `falcon-seal`, `hqc-vault`, `mceliece-gate`, `bike-vault`, `bcrypt-forge`, `pki-chain`, `ring-sign`, `threshold-decrypt`, `blind-sign`, `commit-gate`, `protocol-compose`, `format-ward`, `noise-pipe`, `curve-lens`, `frost-threshold`, `x3dh-wire`, `babel-hash`, `silent-tally`, `dead-sea-cipher`, `iron-serpent`, `biham-lens`, `corrupted-oracle`, `quantum-vault-kpqc`, `iron-letter`, `steg-arena`
+**Demo slugs:** `aegis-gate`, `aes-modes`, `ascon`, `babel-hash`, `bb84`, `bcrypt-forge`, `biham-lens`, `bike-vault`, `blind-oracle`, `blind-sign`, `bulletproofs`, `chacha20-stream`, `ckks-lab`, `commit-gate`, `corrupted-oracle`, `curve-lens`, `curve448`, `dead-sea-cipher`, `dilithium-reject`, `dilithium-seal`, `drbg-arena`, `ecdsa-forge`, `ed25519-forge`, `elgamal-plain`, `envelope-kms`, `falcon-seal`, `fhe-arena`, `format-ward`, `frodo-vault`, `frost-threshold`, `garbled-gate`, `gg20-wallet`, `grover`, `harvest-timeline`, `harvest-vault`, `hash-zoo`, `hawk`, `hqc-timing-break`, `hqc-vault`, `hybrid-sign`, `hybrid-wire`, `ibe-gate`, `iron-letter`, `iron-serpent`, `isogeny-gate`, `j-uniward`, `kdf-arena`, `kdf-chain`, `kerberos`, `kyber-vault`, `kyberslash`, `lattice-fault`, `lll-break`, `lms-ledger`, `lms-xmss`, `mac-race`, `mceliece-gate`, `merkle-vault`, `mls-group`, `model-breach`, `mpcith-sign`, `noise-pipe`, `nonce-guard`, `nonce-lattice`, `ntru-classic`, `oblivious-shelf`, `opaque-gate`, `oram-vault`, `ot-gate`, `padding-oracle`, `paillier-gate`, `pairing-gate`, `patron-shield`, `phantom-vault`, `pki-chain`, `poly1305-mac`, `pq-rotation`, `pq-tls-handshake`, `protocol-compose`, `psi-gate`, `quantum-vault-kpqc`, `ratchet-wire`, `ring-sign`, `rsa-forge`, `scloud-vault`, `shadow-vault`, `shamir-gate`, `shor`, `silent-tally`, `snark-arena`, `sphincs-ledger`, `stark-tower`, `steg-arena`, `stego-suite`, `threshold-decrypt`, `threshold-mldsa`, `timing-oracle`, `vrf-gate`, `vss-gate`, `world-ciphers`, `world-hashes`, `x3dh-wire`, `zk-proof-lab`
 
 ## Development
 

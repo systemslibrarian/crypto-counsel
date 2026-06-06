@@ -1,3 +1,7 @@
+// Source of truth for algorithm metadata. Not imported by the runtime app —
+// the front-end reads corpus.json. Keep this file as the canonical, richly-typed
+// record; corpus.json is a derived/condensed view used at query time.
+// See README ("Architecture" → algorithms.ts).
 import type { Algorithm } from "@/types/crypto";
 
 export const ALGORITHMS: Algorithm[] = [

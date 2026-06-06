@@ -6,3 +6,11 @@ workers_dev = true
 [[routes]]
 pattern = "api.crypto-counsel.systemslibrarian.dev"
 custom_domain = true
+
+# Per-IP rate limit: 20 requests / 60s. Tune as needed.
+# After editing, deploy with: npx wrangler deploy
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }
