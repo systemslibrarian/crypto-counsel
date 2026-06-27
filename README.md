@@ -53,6 +53,45 @@ The front-end reaches the Worker at two endpoints, primary first with automatic 
 | Primary | `https://api.crypto-counsel.systemslibrarian.dev` |
 | Fallback | `https://crypto-counsel-proxy.systemslibrarian.workers.dev` |
 
+## How it works (Cloudflare + Groq)
+
+The app has three independent pieces. **Cloudflare** is the secure middle layer; **Groq** is the LLM inference provider. The front-end itself is *not* on Cloudflare — it's static files on GitHub Pages.
+
+```
+ ┌─────────────────────────┐     ┌──────────────────────────┐     ┌─────────────────────┐
+ │  Browser (front-end)    │     │  Cloudflare Worker        │     │  Groq API           │
+ │  GitHub Pages —         │     │  (the proxy)              │     │  api.groq.com       │
+ │  crypto-counsel...dev   │     │  api.crypto-counsel...dev │     │                     │
+ │                         │     │                           │     │                     │
+ │ 1. client-side RAG over │     │ 3. CORS check             │     │ 5. runs inference   │
+ │    corpus.json, builds  │ ──▶ │ 4. per-IP rate limit      │ ──▶ │    on               │
+ │    the system prompt    │POST │    validate + sanitize    │POST │    gpt-oss-120b      │
+ │                         │     │    (model allowlist,      │     │                     │
+ │ 7. renders streamed     │ ◀── │     max_tokens cap, size) │ ◀── │ 6. streams tokens    │
+ │    markdown + citations │ SSE │    inject GROQ_API_KEY     │ SSE │    back (SSE)        │
+ └─────────────────────────┘     └──────────────────────────┘     └─────────────────────┘
+```
+
+**Why the Worker exists at all:** the Groq API key is a *secret tied to a funded account*. It cannot live in the browser — anyone could view-source a static site and steal it. So the browser never talks to Groq directly. Instead it calls the Cloudflare Worker, which is the only place that holds the key (stored as a Worker **secret**, `GROQ_API_KEY`, never in the repo) and attaches it server-side.
+
+**What each Cloudflare feature does here:**
+- **Worker** (`worker/index.js`) — a serverless function that receives the browser's chat request, enforces safety, adds the Groq key, forwards to Groq, and streams the answer back.
+- **Custom domain** (`api.crypto-counsel.systemslibrarian.dev`) — a Cloudflare-managed route + TLS certificate that points at the Worker. (The `*.workers.dev` URL is the same Worker's built-in address, used as the automatic fallback.)
+- **Rate Limiting binding** (`RATE_LIMITER`) — Cloudflare platform feature; caps each IP to 20 requests / 60s so the funded key can't be drained.
+
+**What Groq does:** Groq exposes an OpenAI-compatible chat-completions endpoint and runs the open `openai/gpt-oss-120b` model on its hardware. The Worker sends a standard `{model, messages, stream}` payload to `https://api.groq.com/openai/v1/chat/completions` and relays the streamed response.
+
+**End-to-end request flow:**
+1. Browser loads the static app from GitHub Pages and fetches `corpus.json`.
+2. On each question it runs **RAG locally** (TF-IDF + synonyms), retrieves the top matches, and builds the system prompt (context + link rules).
+3. It POSTs `{model, messages, stream:true}` to the Worker (primary custom domain, falling back to `workers.dev` on failure).
+4. The Worker checks CORS, applies the per-IP rate limit, and **validates + rebuilds** the payload (model allowlist, `max_tokens` cap, message-count/size limits).
+5. The Worker adds `Authorization: Bearer <GROQ_API_KEY>` and forwards to Groq.
+6. Groq runs inference and streams tokens back (Server-Sent Events).
+7. The Worker pipes that stream straight back to the browser, which renders markdown + citations and persists the conversation to `localStorage`.
+
+> Note: deploying the Worker is a **manual** step (`wrangler deploy`) — there is no CI/CD wired to Cloudflare. The GitHub Pages front-end, by contrast, auto-deploys on push to `main` (gated by `scripts/validate.mjs`).
+
 ## Companion site links
 
 The system prompt instructs the model to include links to these sites when relevant:
