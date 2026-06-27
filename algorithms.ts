@@ -1,6 +1,10 @@
-// Source of truth for algorithm metadata. Not imported by the runtime app —
-// the front-end reads corpus.json. Keep this file as the canonical, richly-typed
-// record; corpus.json is a derived/condensed view used at query time.
+// PARTIAL SNAPSHOT — not the source of truth and not imported at runtime.
+// The runtime app reads corpus.json (97 algorithms). This file is an older,
+// richly-typed reference copy carried over from the crypto-compare project and
+// currently covers only 59 of those algorithms. It also imports a type
+// (@/types/crypto) that does not exist in this repo, so it does NOT compile
+// here on its own — treat it as read-only reference, not buildable code.
+// The maintained source of truth lives in the crypto-compare repository.
 // See README ("Architecture" → algorithms.ts).
 import type { Algorithm } from "@/types/crypto";
 

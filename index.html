@@ -588,12 +588,12 @@
     <div class="logo-icon" aria-hidden="true">⚷</div>
     <div class="logo-text">
       <span class="logo-name">Crypto Counsel</span>
-      <span class="logo-sub">RAG · Llama 3.1 · Groq</span>
+      <span class="logo-sub">RAG · GPT-OSS · Groq</span>
     </div>
   </div>
   <div class="header-right">
     <button class="clear-btn" onclick="clearChat()" title="Clear conversation">Clear</button>
-    <span class="model-badge">llama-3.1-8b-instant</span>
+    <span class="model-badge">openai/gpt-oss-20b</span>
     <div class="status-dot" id="statusDot" aria-hidden="true"></div>
   </div>
 </header>
@@ -629,7 +629,7 @@
 <script>
 const GROQ_API_PRIMARY = 'https://api.crypto-counsel.systemslibrarian.dev';
 const GROQ_API_FALLBACK = 'https://crypto-counsel-proxy.systemslibrarian.workers.dev';
-const MODEL = 'llama-3.1-8b-instant';
+const MODEL = 'openai/gpt-oss-20b';
 const STORAGE_KEY_HISTORY = 'cc-history-v1';
 const STORAGE_KEY_DISPLAY = 'cc-display-v1';
 const MAX_DISPLAY_MESSAGES = 50;
@@ -1057,7 +1057,7 @@ LINK RULES:
   category slugs: symmetric, kem, signatures, hash, kdf, mac, secret-sharing, zkp, steganography, csprng, password-hashing, homomorphic, mpc, asymmetric, threshold
   if no category is clearly relevant, use https://crypto-compare.systemslibrarian.dev/
 - crypto-lab format: https://systemslibrarian.github.io/crypto-lab-<demo-slug>/
-  demo slugs: aegis-gate, aes-modes, ascon, babel-hash, bb84, bcrypt-forge, biham-lens, bike-vault, blind-oracle, blind-sign, bulletproofs, chacha20-stream, ckks-lab, commit-gate, corrupted-oracle, curve-lens, curve448, dead-sea-cipher, dilithium-reject, dilithium-seal, drbg-arena, ecdsa-forge, ed25519-forge, elgamal-plain, envelope-kms, falcon-seal, fhe-arena, format-ward, frodo-vault, frost-threshold, garbled-gate, gg20-wallet, grover, harvest-timeline, harvest-vault, hash-zoo, hawk, hqc-timing-break, hqc-vault, hybrid-sign, hybrid-wire, ibe-gate, iron-letter, iron-serpent, isogeny-gate, j-uniward, kdf-arena, kdf-chain, kerberos, kyber-vault, kyberslash, lattice-fault, lll-break, lms-ledger, lms-xmss, mac-race, mceliece-gate, merkle-vault, mls-group, model-breach, mpcith-sign, noise-pipe, nonce-guard, nonce-lattice, ntru-classic, oblivious-shelf, opaque-gate, oram-vault, ot-gate, padding-oracle, paillier-gate, pairing-gate, patron-shield, phantom-vault, pki-chain, poly1305-mac, pq-rotation, pq-tls-handshake, protocol-compose, psi-gate, quantum-vault-kpqc, ratchet-wire, ring-sign, rsa-forge, scloud-vault, shadow-vault, shamir-gate, shor, silent-tally, snark-arena, sphincs-ledger, stark-tower, stego-suite, threshold-decrypt, threshold-mldsa, timing-oracle, vrf-gate, vss-gate, world-ciphers, world-hashes, x3dh-wire, zk-proof-lab
+  demo slugs: aegis-gate, aes-modes, ascon, babel-hash, bb84, bcrypt-forge, biham-lens, bike-vault, bitcoin-wallet, blind-oracle, blind-sign, broken-trust, bulletproofs, chacha20-stream, ciphertext-mirror, ckks-lab, collision-vault, commit-gate, corrupted-oracle, curve-lens, curve448, dead-sea-cipher, dilithium-reject, dilithium-seal, drbg-arena, e91, ecdsa-forge, ed25519-forge, elgamal-plain, enigma-forge, envelope-kms, falcon-seal, fhe-arena, format-ward, frodo-vault, frost-threshold, garbled-gate, gg20-wallet, grover, harvest-timeline, harvest-vault, hash-zoo, hawk, hqc-timing, hqc-timing-break, hqc-vault, hybrid-guide, hybrid-sign, hybrid-wire, ibe-gate, iron-letter, iron-serpent, isogeny-gate, j-uniward, jevil, jwt-forge, kdf-arena, kdf-chain, kerberos, key-exchange, kyber-vault, kyberslash, lattice-fault, lll-break, lms-ledger, lms-xmss, lwe-hints, mac-race, mceliece-gate, merkle-vault, mls-group, model-breach, mpcith-sign, multivariate, noise-pipe, nonce-guard, nonce-lattice, ntru-classic, oblivious-shelf, opaque-gate, oram-vault, ot-gate, otp-vault, padding-oracle, paillier-gate, pairing-gate, patron-shield, phantom-vault, pki-chain, poly1305-mac, pq-families, pq-rotation, pq-tls-handshake, protocol-compose, psi-gate, quantum-vault-kpqc, ratchet-wire, ring-sign, rsa-forge, scloud-vault, shadow-vault, shamir-gate, shor, silent-tally, snark-arena, sphincs-ledger, ssh-handshake, stark-tower, stego-suite, syndrome-drain, threshold-decrypt, threshold-mldsa, timing-oracle, vigenere-break, vrf-gate, vss-gate, web-of-trust, webauthn, world-ciphers, world-hashes, x3dh-wire, zk-arena, zk-proof-lab
   exception: steg-arena → https://systemslibrarian.github.io/steg-arena/
 - Never output placeholder text like "SLUG". Always output a complete real URL.
 - Never link to the crypto-lab root; always link to a specific demo page.

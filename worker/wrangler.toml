@@ -1,6 +1,6 @@
 name = "crypto-counsel-proxy"
 main = "index.js"
-compatibility_date = "2024-01-01"
+compatibility_date = "2026-06-27"
 workers_dev = true
 
 [[routes]]
@@ -8,9 +8,10 @@ pattern = "api.crypto-counsel.systemslibrarian.dev"
 custom_domain = true
 
 # Per-IP rate limit: 20 requests / 60s. Tune as needed.
+# Rate Limiting bindings went GA (2025-09); this is the stable form
+# (was previously [[unsafe.bindings]]). Requires wrangler >= 4.36.0.
 # After editing, deploy with: npx wrangler deploy
-[[unsafe.bindings]]
+[[ratelimits]]
 name = "RATE_LIMITER"
-type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 20, period = 60 }
