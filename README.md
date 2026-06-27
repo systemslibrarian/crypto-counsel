@@ -1,6 +1,6 @@
 # crypto-counsel
 
-**AI Cryptography Advisor** — ask questions about cryptographic algorithms and get concise, expert answers powered by Groq (`openai/gpt-oss-20b`) with a local RAG corpus of 97 algorithms plus 100+ live-demo cards.
+**AI Cryptography Advisor** — ask questions about cryptographic algorithms and get concise, expert answers powered by Groq (`openai/gpt-oss-120b`) with a local RAG corpus of 97 algorithms plus 100+ live-demo cards.
 
 **Live site:** <https://crypto-counsel.systemslibrarian.dev>
 
