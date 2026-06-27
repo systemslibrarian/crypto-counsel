@@ -32,9 +32,17 @@ algorithms.ts       Partial, richly-typed reference snapshot (59 of the 97
                     does not compile here. The maintained source of truth lives
                     in the crypto-compare repository.
 worker/             Cloudflare Worker proxy for Groq API
-  index.js          Streams Groq responses through to the client; CORS-locked
-                    and rate-limited per IP via a Cloudflare Rate Limiting binding
+  index.js          Streams Groq responses through to the client. Hardened:
+                    CORS-locked, rate-limited per IP, and the request is
+                    validated + rebuilt server-side (model allowlist, max_tokens
+                    cap, message-count/size limits) so the funded Groq key can't
+                    be abused as an open LLM proxy.
   wrangler.toml
+scripts/
+  validate.mjs      Dependency-free repo health check (corpus parses, model is
+                    current, demo-slug lists stay in sync). Gates the deploy.
+.github/workflows/
+  pages.yml         Validates then deploys the front-end to GitHub Pages
 CNAME               GitHub Pages custom domain
 ```
 
@@ -63,6 +71,14 @@ The system prompt instructs the model to include links to these sites when relev
 ## Development
 
 The front-end is a single `index.html` file — no build step required. Open it directly or serve with any static file server. The Cloudflare Worker in `worker/` proxies requests to the Groq API; deploy it with `wrangler deploy` from the `worker/` directory (set the `GROQ_API_KEY` secret and bind a `RATE_LIMITER` rate-limiting namespace).
+
+Before pushing, run the health check:
+
+```
+node scripts/validate.mjs
+```
+
+It verifies `corpus.json` parses, the front-end model is current (and matches the Worker allowlist), and the demo-slug lists in `index.html` and this README stay in sync with the corpus. CI runs the same check and **the GitHub Pages deploy will not run unless it passes**.
 
 ## License
 
