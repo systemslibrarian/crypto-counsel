@@ -60,7 +60,7 @@ jobs:
   # overwhelmingly majors (@noble v2 dropped export subpaths, TypeScript 7,
   # vitest 4), so those still want a human.
   dependabot-auto-merge:
-    needs: [validate, deploy]
+    needs: validate
     if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
