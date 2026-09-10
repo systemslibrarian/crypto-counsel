@@ -165,14 +165,32 @@ literal list to compare — and when they stopped being literals, the old
 `scripts/app-runtime.mjs` now boots `index.html`'s real script under `node:vm`
 and renders the actual prompt string. Exactly what that covers:
 
-- `index.html` must hold **exactly one** ``const systemPrompt = `…`;`` template.
-  Zero, or two or more, is a hard failure naming the count. A second template
-  appended below the real one is a prompt nobody renders; one placed above it is
-  rendered *instead of* the real one, and both used to pass.
+- **Exactly one `const systemPrompt` declaration.** This one is a regex over
+  `index.html`'s script *source text*, not a parse, so what it catches is a
+  matter of spelling and the spelling is: the keyword `const`, one or more
+  whitespace characters (space, tab or line break), the identifier
+  `systemPrompt`. Nothing after the identifier is looked at, so a second
+  declaration counts whatever it is assigned and whatever trails the statement —
+  a `// frozen legacy copy` comment after the `;`, two spaces after `const`, a
+  line break before the backtick. Any count other than one is a hard failure
+  naming the count, and so is a declaration whose value is not a
+  backtick-delimited literal closed by `` `; ``, because that one cannot be
+  rendered. A second template appended below the real one is a prompt nobody
+  renders; one placed above it is rendered *instead of* the real one.
+  What a source match cannot see, and this one does not: a prompt bound any
+  other way — `let`/`var systemPrompt`, a reassignment, or a second prompt under
+  a different identifier — or a comment written between `const` and the name. It
+  counts a `const systemPrompt` inside a comment or a string literal too, which
+  fails closed: a spurious 2 is a loud error, never a silent skip.
 - In the rendered string, the `category slugs:` line, and **every** line whose
   colon-terminated label ends in `demo slugs` — any prefix, any case, so
   `LEGACY demo slugs:` counts — are held to exact set equality with the corpus,
-  and there must be exactly one line of each.
+  and there must be exactly one line of each. The separator is a colon followed
+  by any amount of space or tab **including none**, so `demo slugs:snow2, …` and
+  a tab after the colon are both read. The label must begin the line (after
+  indentation) and contain no colon of its own, so a list introduced mid-line
+  after another colon — `Note: LEGACY demo slugs: …` — escapes, as does a label
+  whose values sit on the following line.
 - Every `exception:` line that `DEMO_SITE_EXCEPTIONS` requires is present, and
   every concrete `systemslibrarian.github.io/<slug>/` URL in the rendered string
   is the live site of a demo the corpus carries.
@@ -185,7 +203,50 @@ first and then agrees with itself. The same execution asserts
 `sourceChipHref()`'s return value for every corpus entry, which is the other
 consumer of that table.
 
+Every escape named above was found by walking through a version of this prose
+that claimed more than its mechanism delivered, so none of it is left as a
+memory: `node scripts/mutations.mjs` replays them. See [Mutation set](#mutation-set).
+
 It also holds the two reference docs to the corpus: `crypto_lab_readme` must list every demo entry exactly once, and each demo it features must have an entry — that doc is a prose snapshot of the catalog, and nothing checked it until it had fallen 97 demos behind. `crypto_compare_readme` quotes a sibling repo's totals, so the check reads that repo: see [Running the validator](#running-the-validator) for why an absent checkout is an error rather than a skip. CI runs the same check and **the GitHub Pages deploy will not run unless it passes**.
+
+## Mutation set
+
+```
+node scripts/mutations.mjs
+```
+
+Every assertion in `scripts/validate.mjs` was justified, when it landed, by a
+defect fixture: a deliberate break the check is supposed to catch. Those
+fixtures used to live in commit messages, which is to say they were run once and
+then never again — and a check that has quietly stopped being able to fail still
+reads as coverage, which is this project's recurring failure one level up. So
+they live in `scripts/mutations.mjs` and get replayed.
+
+Each fixture is applied to a throwaway copy of the tree under the OS temp
+directory, and the copy's own `scripts/validate.mjs` is run against it. A
+fixture counts as caught only if the validator exits non-zero **and** its output
+matches that fixture's expected reason — exit code alone would let a copy that
+cannot see crypto-compare fail everything for the wrong reason and read as total
+coverage. An unmutated copy runs first and must pass, or the whole run aborts
+rather than reporting a screenful of false positives. Nothing outside the temp
+copy is written; crypto-compare is located once and read exactly as the
+validator reads it.
+
+`--tree <path>` points the harness at another checkout, which is what makes it a
+matrix rather than a checklist: a fixture that fails on both an old tree and a
+new one proves nothing about the change, and running both is the only way to
+tell that apart from one that genuinely flips. `--only M13,M14` selects a
+subset; `--keep` leaves the copies behind to inspect.
+
+M1–M9 are the fixtures from the commits that built the reference-doc,
+live-link, generator-output and cross-repo-count checks. M10–M12 are the two
+extra-template defects and the alternate-label slug list that `d2415f0` closed.
+M13–M17 are the five spellings an adversarial audit of `d2415f0` walked through:
+a second template with a trailing comment; a `LEGACY demo slugs:` list with no
+space after the colon; and three more ways to space a declaration — two spaces
+after `const`, a line break before the backtick, and a line break between
+`const` and the identifier. All five passed `d2415f0` with a retired slug live
+in the code path, and all five fail now.
 
 ## License
 

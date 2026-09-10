@@ -221,8 +221,16 @@ for (const [file, text] of [['index.html', html], ['README.md', readme], ['corpu
 // handed a retired slug with the validator green. Every line whose label
 // matches is held to the same set equality, and there must still be exactly one
 // of them.
+//
+// The separator is a colon followed by any amount of space or tab, including
+// none — `demo slugs:snow2, …` and a tab after the colon are both read. It used
+// to demand a literal colon-SPACE, which an audit walked through by deleting one
+// character: the no-space form is in the rendered prompt the model is sent, and
+// was matched by nothing. The line must still be one line — `[ \t]*`, not `\s*`,
+// so a value on the NEXT line is not swept up as if it were on this one, and a
+// label with an empty value still reads as "no such line".
 const listCheck = (labelPattern, text, expected, where) => {
-  const matches = [...text.matchAll(new RegExp(`^[ \\t]*(${labelPattern}): (.+)$`, 'gmi'))];
+  const matches = [...text.matchAll(new RegExp(`^[ \\t]*(${labelPattern}):[ \\t]*(.+)$`, 'gmi'))];
   if (matches.length === 0) {
     fail(`${where} has no line whose label matches /${labelPattern}/i`);
     return;

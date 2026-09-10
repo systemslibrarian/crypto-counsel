@@ -122,15 +122,61 @@ const SCRIPT_RE = /<script>\n([\s\S]*?)\n<\/script>/g;
 // the harness renders the same string the model is sent, not a paraphrase of
 // it.
 //
-// Global, and the count is asserted, because a non-global non-greedy regex
-// renders the FIRST such template and only that one. Both directions of that
-// were exploitable: a second `const systemPrompt` code path appended BELOW the
-// real one — carrying a frozen slug list with a retired demo in it — was never
-// read at all, and a decoy template placed ABOVE the real one was rendered in
-// its place, leaving the string the model is actually sent unexamined. Neither
-// turned anything red. So index.html must hold exactly one of these; zero and
-// two are both hard failures, reported with the count.
-const SYSTEM_PROMPT_RE = /(?:^|\n)([ \t]*const systemPrompt = `[\s\S]*?`;)(?=\n|$)/g;
+// Both regexes below are matches over index.html's <script> SOURCE TEXT, not
+// over a parsed AST, so what they can and cannot see is a property of spelling
+// and is spelled out here rather than described in the abstract.
+//
+// Why two, and why the count is asserted: a non-global non-greedy regex renders
+// the FIRST such template and only that one, and both directions of that were
+// exploitable — a second `const systemPrompt` code path appended BELOW the real
+// one, carrying a frozen slug list with a retired demo in it, was never read at
+// all, and a decoy template placed ABOVE the real one was rendered in its place,
+// leaving the string the model is actually sent unexamined. Neither turned
+// anything red.
+//
+// The earlier fix for that anchored the match to a whole LINE — `\n`, then
+// `[ \t]*const systemPrompt = \`` verbatim, and a closing `\`;` that had to be
+// followed immediately by a newline or EOF. An audit walked straight through it,
+// because each of these is a different spelling of the same declaration and the
+// line anchor saw none of them: a trailing comment after the `;`
+// (`\`; // frozen legacy copy`), two spaces after `const`, and a line break
+// between `=` and the backtick. Each left the second template uncounted and the
+// validator green, with a frozen slug list naming a retired demo in live code.
+// They are fixtures M13, M15 and M16 in scripts/mutations.mjs now.
+//
+// So the anchor is the DECLARATION now, not the line.
+//
+// SYSTEM_PROMPT_DECL_RE is what the count comes from. It matches, in source
+// text: the keyword `const`, one or more WHITESPACE characters (spaces, tabs or
+// a line break), and the identifier `systemPrompt` — with `const` not preceded
+// by an identifier character or a `.`, and `systemPrompt` not followed by one.
+// It looks at nothing after the identifier, so a second declaration counts
+// however it is assigned and whatever trails the statement: a comment, more
+// code on the same line, or nothing at all.
+//
+// What it does NOT match, stated because a text match's blind spots are the
+// whole risk: a prompt bound any other way — `let`/`var systemPrompt`, a
+// reassignment of the existing one, a destructuring binding, or a second prompt
+// under a different identifier; a comment sitting between `const` and the name
+// (`const /*x*/ systemPrompt`); and text concatenated onto systemPrompt after
+// the assignment, which is inside the one declaration and so is not a second
+// template at all — nothing here or in validate.mjs reads it.
+//
+// It over-matches in one direction, on purpose: `const systemPrompt` written
+// inside a comment or a string literal is counted, because a text match cannot
+// tell the difference. That fails closed — a spurious 2 is a loud error, never
+// a silent skip.
+const SYSTEM_PROMPT_DECL_RE = /(?<![$\w.])const\s+systemPrompt(?![$\w])/g;
+
+// SYSTEM_PROMPT_RE is what gets RENDERED: the whole statement, from the `const`
+// keyword to the first `\`;` at or after the opening backtick. `\s*` on both
+// sides of the `=` tolerates any spacing, line breaks included, and nothing
+// whatsoever is required after the `;`. Its count is asserted separately from
+// the declaration count, so a lone `const systemPrompt` that is NOT assigned a
+// backtick-delimited literal closed by `\`;` — a string concatenation, a
+// function call, a template closed on a later line by something else — is a
+// hard failure rather than a silently unrendered prompt.
+const SYSTEM_PROMPT_RE = /(?<![$\w.])const\s+systemPrompt\s*=\s*`[\s\S]*?`;/g;
 
 /**
  * Boot index.html's script under a DOM shim and hand back its real internals.
@@ -148,21 +194,33 @@ export function loadApp(htmlPath) {
   }
   const source = blocks[0];
 
-  const promptMatches = [...source.matchAll(SYSTEM_PROMPT_RE)];
-  if (promptMatches.length === 0) {
+  const declCount = [...source.matchAll(SYSTEM_PROMPT_DECL_RE)].length;
+  if (declCount === 0) {
     throw new Error(
-      `found 0 \`const systemPrompt = \`…\`;\` templates in ${htmlPath} — ` +
+      `found 0 \`const systemPrompt\` declarations in ${htmlPath} — ` +
         'the system prompt must stay a single template literal so it can be rendered and checked',
     );
   }
-  if (promptMatches.length > 1) {
+  if (declCount > 1) {
     throw new Error(
-      `found ${promptMatches.length} \`const systemPrompt = \`…\`;\` templates in ${htmlPath}, expected exactly 1 — ` +
+      `found ${declCount} \`const systemPrompt\` declarations in ${htmlPath}, expected exactly 1 — ` +
         'the harness can only render one, so every extra one is a prompt nobody checked. ' +
         'Delete the extras, or make the harness pick deliberately',
     );
   }
-  const promptMatch = promptMatches[0];
+
+  const promptMatches = [...source.matchAll(SYSTEM_PROMPT_RE)];
+  if (promptMatches.length !== 1) {
+    throw new Error(
+      `${htmlPath} holds 1 \`const systemPrompt\` declaration but ${promptMatches.length} ` +
+        '`const systemPrompt = `…`;` template-literal statement(s), expected exactly 1 — ' +
+        'the prompt must be assigned a template literal closed by "`;" so it can be lifted out and rendered',
+    );
+  }
+  // [0] is the whole `const systemPrompt = `…`;` statement: SYSTEM_PROMPT_RE
+  // carries no capture group, because the leading indentation the old one
+  // captured was never used for anything.
+  const promptStatement = promptMatches[0][0];
 
   // Appended to the SAME script source, so it shares the top-level lexical
   // scope and can see `let corpus`, buildIndex(), buildLinkRules() and friends
@@ -177,7 +235,7 @@ export function loadApp(htmlPath) {
   sourceChipHref: sourceChipHref,
   buildLinkRules: buildLinkRules,
   renderSystemPrompt: function (context) {
-${promptMatch[1]}
+${promptStatement}
     return systemPrompt;
   },
   load: function (data) { corpus = data; buildIndex(); }
