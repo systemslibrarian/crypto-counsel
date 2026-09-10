@@ -120,9 +120,17 @@ const SCRIPT_RE = /<script>\n([\s\S]*?)\n<\/script>/g;
 
 // The `const systemPrompt = \`…\`;` assignment inside ask(). Lifted verbatim so
 // the harness renders the same string the model is sent, not a paraphrase of
-// it — a frozen list re-added to the prompt template OUTSIDE buildLinkRules()
-// would otherwise be invisible to every assertion.
-const SYSTEM_PROMPT_RE = /\n(\s*const systemPrompt = `[\s\S]*?`;)\n/;
+// it.
+//
+// Global, and the count is asserted, because a non-global non-greedy regex
+// renders the FIRST such template and only that one. Both directions of that
+// were exploitable: a second `const systemPrompt` code path appended BELOW the
+// real one — carrying a frozen slug list with a retired demo in it — was never
+// read at all, and a decoy template placed ABOVE the real one was rendered in
+// its place, leaving the string the model is actually sent unexamined. Neither
+// turned anything red. So index.html must hold exactly one of these; zero and
+// two are both hard failures, reported with the count.
+const SYSTEM_PROMPT_RE = /(?:^|\n)([ \t]*const systemPrompt = `[\s\S]*?`;)(?=\n|$)/g;
 
 /**
  * Boot index.html's script under a DOM shim and hand back its real internals.
@@ -140,13 +148,21 @@ export function loadApp(htmlPath) {
   }
   const source = blocks[0];
 
-  const promptMatch = SYSTEM_PROMPT_RE.exec(source);
-  if (!promptMatch) {
+  const promptMatches = [...source.matchAll(SYSTEM_PROMPT_RE)];
+  if (promptMatches.length === 0) {
     throw new Error(
-      'could not find the `const systemPrompt = `…`;` template in index.html — ' +
+      `found 0 \`const systemPrompt = \`…\`;\` templates in ${htmlPath} — ` +
         'the system prompt must stay a single template literal so it can be rendered and checked',
     );
   }
+  if (promptMatches.length > 1) {
+    throw new Error(
+      `found ${promptMatches.length} \`const systemPrompt = \`…\`;\` templates in ${htmlPath}, expected exactly 1 — ` +
+        'the harness can only render one, so every extra one is a prompt nobody checked. ' +
+        'Delete the extras, or make the harness pick deliberately',
+    );
+  }
+  const promptMatch = promptMatches[0];
 
   // Appended to the SAME script source, so it shares the top-level lexical
   // scope and can see `let corpus`, buildIndex(), buildLinkRules() and friends

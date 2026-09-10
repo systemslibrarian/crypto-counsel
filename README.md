@@ -163,11 +163,27 @@ vocabularies are generated from the corpus by `buildLinkRules()`, so there is no
 literal list to compare — and when they stopped being literals, the old
 `if (line.includes('${')) return;` skipped both assertions and left them inert.
 `scripts/app-runtime.mjs` now boots `index.html`'s real script under `node:vm`
-and renders the actual prompt string; the slug lists, the exception lines and
-every URL in it are asserted against the corpus. The generator is never
-reimplemented for the check — a second copy of the logic drifts from the first
-and then agrees with itself. The same execution asserts `sourceChipHref()`'s
-return value for every corpus entry, which is the other consumer of that table.
+and renders the actual prompt string. Exactly what that covers:
+
+- `index.html` must hold **exactly one** ``const systemPrompt = `…`;`` template.
+  Zero, or two or more, is a hard failure naming the count. A second template
+  appended below the real one is a prompt nobody renders; one placed above it is
+  rendered *instead of* the real one, and both used to pass.
+- In the rendered string, the `category slugs:` line, and **every** line whose
+  colon-terminated label ends in `demo slugs` — any prefix, any case, so
+  `LEGACY demo slugs:` counts — are held to exact set equality with the corpus,
+  and there must be exactly one line of each.
+- Every `exception:` line that `DEMO_SITE_EXCEPTIONS` requires is present, and
+  every concrete `systemslibrarian.github.io/<slug>/` URL in the rendered string
+  is the live site of a demo the corpus carries.
+
+What it does **not** cover: prompt text that is not inside that one template —
+anything concatenated onto `systemPrompt` after the assignment, and the
+retrieved context, which is rendered here as a placeholder. The generator is
+never reimplemented for the check — a second copy of the logic drifts from the
+first and then agrees with itself. The same execution asserts
+`sourceChipHref()`'s return value for every corpus entry, which is the other
+consumer of that table.
 
 It also holds the two reference docs to the corpus: `crypto_lab_readme` must list every demo entry exactly once, and each demo it features must have an entry — that doc is a prose snapshot of the catalog, and nothing checked it until it had fallen 97 demos behind. `crypto_compare_readme` quotes a sibling repo's totals, so the check reads that repo: see [Running the validator](#running-the-validator) for why an absent checkout is an error rather than a skip. CI runs the same check and **the GitHub Pages deploy will not run unless it passes**.
 

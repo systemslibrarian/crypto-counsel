@@ -200,25 +200,42 @@ for (const [file, text] of [['index.html', html], ['README.md', readme], ['corpu
 //
 // So the source text is no longer what gets read. index.html's script is
 // executed headlessly (scripts/app-runtime.mjs) and the assertions below run
-// against the rendered prompt string. Reading the generated output also closes
-// a hole the old source-text check never covered: a frozen list re-added to the
-// prompt template OUTSIDE buildLinkRules() would have been invisible to it, and
-// is not invisible to this.
+// against the rendered prompt string — the one `const systemPrompt` template
+// index.html is allowed to hold, with a placeholder standing in for the
+// retrieved context. What that buys: a frozen list re-added to THAT template
+// outside buildLinkRules() lands in the rendered string, so the set equality
+// below reads it. What it does not buy: a list assembled anywhere else. A
+// second template is kept out by app-runtime.mjs failing on the count, not by
+// anything here; text concatenated onto systemPrompt after the assignment is
+// not covered at all.
 // Checks EVERY occurrence of the line, and requires there to be exactly one.
 // Taking only the first match would let a second, frozen copy be appended below
 // the generated one and never be read — which is the same class of hole as the
 // `${` early-return this replaces, just one layer in.
-const listCheck = (label, text, expected, where) => {
-  const lines = [...text.matchAll(new RegExp(`^\\s*${label}: (.+)$`, 'gm'))].map((m) => m[1]);
-  if (lines.length === 0) {
-    fail(`${where} has no "${label}" line`);
+//
+// `labelPattern` is a regex source matched, case-insensitively, against the
+// whole colon-terminated label — not the literal label text. Anchoring on the
+// exact label was the remaining hole one layer further in: `LEGACY demo slugs:
+// snow2, aes-modes, steg-arena` inserted a line above FORMAT sits in the string
+// the model is sent, and `^\s*demo slugs: ` cannot see it, so the model was
+// handed a retired slug with the validator green. Every line whose label
+// matches is held to the same set equality, and there must still be exactly one
+// of them.
+const listCheck = (labelPattern, text, expected, where) => {
+  const matches = [...text.matchAll(new RegExp(`^[ \\t]*(${labelPattern}): (.+)$`, 'gmi'))];
+  if (matches.length === 0) {
+    fail(`${where} has no line whose label matches /${labelPattern}/i`);
     return;
   }
-  if (lines.length > 1) {
-    fail(`${where} states "${label}" ${lines.length} times — there must be exactly one, generated from the corpus`);
+  if (matches.length > 1) {
+    fail(
+      `${where} carries ${matches.length} lines whose label matches /${labelPattern}/i ` +
+        `(${matches.map((m) => m[1].trim()).join(' | ')}) — there must be exactly one, generated from the corpus`,
+    );
   }
-  for (const line of lines) {
-    const got = line.split(',').map((s) => s.trim()).filter(Boolean);
+  for (const m of matches) {
+    const label = m[1].trim();
+    const got = m[2].split(',').map((s) => s.trim()).filter(Boolean);
     const gotSet = new Set(got);
     const missing = expected.filter((s) => !gotSet.has(s));
     const extra = got.filter((s) => !expected.includes(s));
@@ -252,7 +269,10 @@ if (app) {
     }
 
     listCheck('category slugs', prompt, corpusCategories, 'generated system prompt');
-    listCheck('demo slugs', prompt, demoSlugs, 'generated system prompt');
+    // Any label ending in "demo slugs", whatever precedes it: `LEGACY demo
+    // slugs:`, `OLD demo slugs:`, `Demo slugs:`. A second slug list under a
+    // different name is still a slug list the model reads.
+    listCheck('[^:]*demo slugs', prompt, demoSlugs, 'generated system prompt');
 
     // Every deviating demo must be spelled out to the model. Listing a slug
     // whose site is NOT the default pattern, without also telling the model
