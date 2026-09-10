@@ -905,12 +905,28 @@ function addTyping() {
   return div;
 }
 
+// Demos whose live site is NOT https://systemslibrarian.github.io/crypto-lab-<slug>/.
+// This is the ONLY place a demo URL may deviate from the pattern: the source
+// chips below and the system prompt's link rule are both generated from it, so
+// a demo cannot be right in one and wrong in the other. steg-arena used to be
+// hardcoded in three places; when that demo was retired its site started 404ing
+// and all three kept pointing at it.
+const DEMO_SITE_EXCEPTIONS = {
+  'snow2': 'https://systemslibrarian.github.io/snow2/'
+};
+
+function demoSlugFromId(id) {
+  return id.replace(/^demo_(?:crypto_lab_)?/, '').replace(/_/g, '-');
+}
+
+function demoSiteUrl(slug) {
+  return DEMO_SITE_EXCEPTIONS[slug] || `https://systemslibrarian.github.io/crypto-lab-${slug}/`;
+}
+
 function sourceChipHref(src) {
-  if (src.id.startsWith('demo_crypto_lab_')) {
-    const slug = src.id.replace('demo_crypto_lab_', '').replace(/_/g, '-');
-    if (slug === 'steg-arena') return 'https://systemslibrarian.github.io/steg-arena/';
-    return `https://systemslibrarian.github.io/crypto-lab-${slug}/`;
-  }
+  // Every demo entry, not only `demo_crypto_lab_*`: demo_snow2 used to fall
+  // through to the algorithm branch and cite the crypto-compare homepage.
+  if (src.id.startsWith('demo_')) return demoSiteUrl(demoSlugFromId(src.id));
   // Algorithm entry — link to crypto-compare, by category when known
   const idx = corpus.findIndex(d => d.id === src.id);
   const cat = idx >= 0 ? docCategories[idx] : '';
@@ -1038,6 +1054,58 @@ function renderSuggestions() {
   }
 }
 
+// The prompt's link rules are GENERATED from the loaded corpus, never typed.
+// Both vocabularies were frozen snapshots and both had rotted: the category
+// list named five slugs crypto-compare has never defined (signatures,
+// secret-sharing, password-hashing, homomorphic, threshold) while omitting two
+// it does (curve, ot_pir), and the demo list omitted snow2 — so the model built
+// the default `crypto-lab-snow2` URL for it, which 404s. Neither
+// failure is visible to an HTTP check: crypto-compare is a static export, so a
+// bogus ?cat= returns 200 and simply filters nothing.
+function buildLinkRules() {
+  const demoSlugs = [...new Set(
+    corpus.filter(d => d.id.startsWith('demo_')).map(d => demoSlugFromId(d.id))
+  )].sort();
+  // Algorithm entries only: demo entries carry the catalog's own uppercase
+  // card categories ("ENCRYPTION | STEGANOGRAPHY"), and the two `*_readme`
+  // reference docs are prose. scripts/validate.mjs derives this same set the
+  // same way and fails if the corpus ever grows a category crypto-compare
+  // does not define.
+  const categories = [...new Set(
+    corpus.map((d, i) => (d.id.startsWith('demo_') || d.id.endsWith('_readme')) ? '' : docCategories[i]).filter(Boolean)
+  )].sort();
+
+  const rules = ['LINK RULES:', '- Include clickable markdown links when relevant.'];
+
+  if (categories.length) {
+    rules.push(
+      '- crypto-compare format: https://crypto-compare.systemslibrarian.dev/?cat=<category>',
+      `  category slugs: ${categories.join(', ')}`,
+      '  use no other value — an unknown ?cat= still loads the page, it just filters nothing',
+      '  if no category is clearly relevant, use https://crypto-compare.systemslibrarian.dev/'
+    );
+  }
+
+  if (demoSlugs.length) {
+    rules.push(
+      '- crypto-lab format: https://systemslibrarian.github.io/crypto-lab-<demo-slug>/',
+      `  demo slugs: ${demoSlugs.join(', ')}`
+    );
+    for (const slug of demoSlugs) {
+      if (DEMO_SITE_EXCEPTIONS[slug]) rules.push(`  exception: ${slug} → ${DEMO_SITE_EXCEPTIONS[slug]}`);
+    }
+  } else {
+    rules.push('- Do not link to crypto-lab demos: the demo list did not load, so any URL would be a guess.');
+  }
+
+  rules.push(
+    '- Never output placeholder text like "SLUG". Always output a complete real URL.',
+    '- Never link to the crypto-lab root; always link to a specific demo page.'
+  );
+
+  return rules.join('\n');
+}
+
 async function ask(question) {
   if (!question.trim()) return;
 
@@ -1051,16 +1119,7 @@ async function ask(question) {
 
   const systemPrompt = `You are Crypto Counsel, a cryptography advisor for systemslibrarian's education platform.
 
-LINK RULES:
-- Include clickable markdown links when relevant.
-- crypto-compare format: https://crypto-compare.systemslibrarian.dev/?cat=<category>
-  category slugs: symmetric, kem, signatures, hash, kdf, mac, secret-sharing, zkp, steganography, csprng, password-hashing, homomorphic, mpc, asymmetric, threshold
-  if no category is clearly relevant, use https://crypto-compare.systemslibrarian.dev/
-- crypto-lab format: https://systemslibrarian.github.io/crypto-lab-<demo-slug>/
-  demo slugs: ablation-wire, accumulator, aegis-gate, aes-modes, ascon, attestation-gate, attribute-gate, babel-hash, bb84, bcrypt-forge, beacon-lock, biham-lens, bike-vault, bitcoin-script, bitcoin-wallet, blind-hello, blind-oracle, blind-relay, blind-sign, broken-trust, bulletproofs, card-trick, chacha20-stream, chain-of-trust, ciphertext-mirror, ckks-lab, collision-vault, commit-gate, context-ward, corrupted-oracle, covert-channel-studio, credential-veil, curve-lens, curve448, dead-sea-cipher, diffie-hellman-mitm, dilithium-reject, dilithium-seal, dkg-gate, dnssec-chain, downgrade-wire, dp-noise, drbg-arena, e91, ec-point-arithmetic, ecdsa-forge, ed25519-forge, elgamal-plain, encrochat, enigma-forge, entropy-collapse, envelope-kms, factor-forge, falcon-seal, feistel-forge, fhe-arena, format-ward, frodo-vault, frost-threshold, frozen-heart, fte, garbled-gate, gg20-wallet, ggh-trapdoor, grover, harvest-timeline, harvest-vault, hash-zoo, hawk, hpke-envelope, hqc-timing, hqc-timing-break, hqc-vault, hybrid-guide, hybrid-pqc, hybrid-sign, hybrid-wire, ibe-gate, icy-dvrf, iron-letter, iron-serpent, isogeny-atlas, isogeny-gate, j-uniward, jevil, jwt-forge, kdf-arena, kdf-chain, kem-trap, kerberos, key-exchange, key-mirror, kmac-gate, kyber-vault, kyberslash, lattice-builder, lattice-fault, lattice-gentle, lll-break, lms-ledger, lms-xmss, lwe-hints, mac-race, masked-core, matsui-line, mayo-seal, mceliece-gate, merkle-proofs, merkle-vault, mls-group, model-breach, mpcith-sign, multivariate, musig-gate, noise-pipe, nonce-collision, nonce-guard, nonce-lattice, ntru-classic, oblivious-shelf, opaque-gate, oram-vault, ot-gate, otp-vault, padding-oracle, paillier-gate, pairing-gate, pake-gate, patron-shield, phantom-vault, pki-chain, poly1305-mac, polynomial-forge, power-trace, pq-families, pq-rotation, pq-tls-handshake, protocol-checker, protocol-compose, psi-gate, quantum-entropy, quantum-vault-kpqc, ratchet-wire, rekey-relay, reshare-circle, ring-sign, rsa-educational, rsa-forge, salamander, schnorr-forge, scloud-vault, search-vault, sector-vault, shadow-vault, shamir-gate, shamir-vs-frost, shelf-oracle, shor, signed-bytes, silent-tally, simon-period, snark-arena, spake-gate, spdz-forge, sphincs-ledger, sphinx-mix, ssh-handshake, stark-tower, stego-suite, stream-ward, syndrome-drain, syndrome-hints, threshold-decrypt, threshold-mldsa, time-lock-puzzle, time-trust, timing-oracle, timing-sidechannel, tls-handshake, token-tell, traitor-trace, vdf, vigenere-break, vrf-gate, vss-gate, web-of-trust, webauthn, world-ciphers, world-hashes, x3dh-wire, zk-arena, zk-proof-lab
-  exception: steg-arena → https://systemslibrarian.github.io/steg-arena/
-- Never output placeholder text like "SLUG". Always output a complete real URL.
-- Never link to the crypto-lab root; always link to a specific demo page.
+${buildLinkRules()}
 
 CONTEXT: ${context || 'No matched data — use general knowledge.'}
 
