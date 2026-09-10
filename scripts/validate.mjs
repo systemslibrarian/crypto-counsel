@@ -74,6 +74,70 @@ if (missingInReadme.length) {
   fail(`README.md is missing ${missingInReadme.length} demo slug(s): ${missingInReadme.join(', ')}`);
 }
 
+// --- reference docs must list every demo the corpus carries ---
+// corpus.json holds two prose reference docs alongside the per-demo entries.
+// `crypto_lab_readme` is a SNAPSHOT of the catalog's demo list, and nothing
+// checked it: on 2026-09-09 it described 96 demos while the corpus carried 193
+// and the catalog carded 193. The catalog's own tools/corpus-sync.js cannot see
+// this -- it only diffs `demo_crypto_lab_*` ids against the cards -- so the
+// chatbot could answer from a per-demo entry it had while its overview of the
+// catalog described a smaller, older lab. These assertions are the only thing
+// standing between that doc and the next silent divergence, and they run
+// offline: they compare the doc against this repo's own demo entries, not
+// against a sibling checkout that CI does not have.
+const REFERENCE_DOCS = ['crypto_lab_readme', 'crypto_compare_readme'];
+for (const id of REFERENCE_DOCS) {
+  if (!ids.has(id)) fail(`corpus.json is missing reference doc "${id}"`);
+}
+
+const labDoc = corpus.find((e) => e.id === 'crypto_lab_readme');
+if (labDoc) {
+  const section = (name) => {
+    const i = labDoc.text.indexOf(`${name}:\n`);
+    if (i === -1) return null;
+    const body = labDoc.text.slice(i + name.length + 2);
+    const end = body.indexOf('\n\n');
+    return (end === -1 ? body : body.slice(0, end)).split('\n').filter((l) => l.startsWith('- '));
+  };
+  const featured = section('Featured Projects');
+  const allDemos = section('All Demos');
+
+  if (!featured || !allDemos) {
+    fail('crypto_lab_readme is missing its "Featured Projects:" or "All Demos:" section');
+  } else {
+    // Every demo entry in the corpus must be listed exactly once, in one
+    // section or the other. Featured demos are listed only under Featured.
+    const demoEntries = corpus.filter((e) => typeof e.id === 'string' && e.id.startsWith('demo_'));
+    const listed = featured.length + allDemos.length;
+    if (listed !== demoEntries.length) {
+      fail(
+        `crypto_lab_readme lists ${listed} demos (${featured.length} featured + ${allDemos.length} all) ` +
+          `but the corpus carries ${demoEntries.length} demo entries — regenerate the reference doc from the catalog README`,
+      );
+    }
+
+    const names = [...featured, ...allDemos].map((l) => l.slice(2).split(/ \(https|: /)[0].trim());
+    const seen = new Set();
+    for (const n of names) {
+      if (seen.has(n)) fail(`crypto_lab_readme lists "${n}" twice`);
+      seen.add(n);
+    }
+
+    // Featured lines carry a live URL; each must resolve to a demo entry that
+    // actually exists, so a featured swap cannot point the chatbot at nothing.
+    for (const l of featured) {
+      const m = /\(https:\/\/systemslibrarian\.github\.io\/([^/)]+)\//.exec(l);
+      if (!m) {
+        fail(`crypto_lab_readme featured line has no github.io URL: ${l}`);
+        continue;
+      }
+      const slug = m[1];
+      const entryId = `demo_${slug.replace(/-/g, '_')}`;
+      if (!ids.has(entryId)) fail(`crypto_lab_readme features "${slug}" but corpus has no "${entryId}" entry`);
+    }
+  }
+}
+
 // --- report ---
 if (errors.length) {
   console.error(`✗ validation failed (${errors.length}):`);

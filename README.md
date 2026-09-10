@@ -40,7 +40,8 @@ worker/             Cloudflare Worker proxy for Groq API
   wrangler.toml
 scripts/
   validate.mjs      Dependency-free repo health check (corpus parses, model is
-                    current, demo-slug lists stay in sync). Gates the deploy.
+                    current, demo-slug lists stay in sync, and the reference
+                    docs list every demo the corpus carries). Gates the deploy.
 .github/workflows/
   pages.yml         Validates then deploys the front-end to GitHub Pages
 CNAME               GitHub Pages custom domain
@@ -117,7 +118,7 @@ Before pushing, run the health check:
 node scripts/validate.mjs
 ```
 
-It verifies `corpus.json` parses, the front-end model is current (and matches the Worker allowlist), and the demo-slug lists in `index.html` and this README stay in sync with the corpus. CI runs the same check and **the GitHub Pages deploy will not run unless it passes**.
+It verifies `corpus.json` parses, the front-end model is current (and matches the Worker allowlist), and the demo-slug lists in `index.html` and this README stay in sync with the corpus. It also holds the two reference docs to the corpus: `crypto_lab_readme` must list every demo entry exactly once, and each demo it features must have an entry — that doc is a prose snapshot of the catalog, and nothing checked it until it had fallen 97 demos behind. CI runs the same check and **the GitHub Pages deploy will not run unless it passes**.
 
 ## License
 
