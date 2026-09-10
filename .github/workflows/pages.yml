@@ -17,8 +17,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # timeout-minutes on every job: GitHub's default is 360, so a hung step burns
+  # six hours of runner time and nothing goes red until it finally times out.
+  # These ceilings are sized off this repo's own measured runs (2026-08/09):
+  # validate 8-11s, deploy 12-13s, auto-merge 10s plus up to two 15s merge
+  # retries. Each is a wide multiple of that -- generous enough that a slow
+  # runner or a Pages API wait never trips it, tight enough that a hang is
+  # caught in minutes rather than hours. Queue time does not count against it.
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -34,6 +42,7 @@ jobs:
   deploy:
     needs: validate
     if: github.event_name != 'pull_request'
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -63,6 +72,7 @@ jobs:
     needs: validate
     if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
       pull-requests: write
