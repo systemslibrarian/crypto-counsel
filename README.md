@@ -165,47 +165,103 @@ literal list to compare — and when they stopped being literals, the old
 `scripts/app-runtime.mjs` now boots `index.html`'s real script under `node:vm`
 and renders the actual prompt string. Exactly what that covers:
 
-- **Exactly one `const systemPrompt` declaration.** This one is a regex over
-  `index.html`'s script *source text*, not a parse, so what it catches is a
-  matter of spelling and the spelling is: the keyword `const`, one or more
-  whitespace characters (space, tab or line break), the identifier
-  `systemPrompt`. Nothing after the identifier is looked at, so a second
-  declaration counts whatever it is assigned and whatever trails the statement —
-  a `// frozen legacy copy` comment after the `;`, two spaces after `const`, a
-  line break before the backtick. Any count other than one is a hard failure
-  naming the count, and so is a declaration whose value is not a
-  backtick-delimited literal closed by `` `; ``, because that one cannot be
-  rendered. A second template appended below the real one is a prompt nobody
-  renders; one placed above it is rendered *instead of* the real one.
-  What a source match cannot see, and this one does not: a prompt bound any
-  other way — `let`/`var systemPrompt`, a reassignment, or a second prompt under
-  a different identifier — or a comment written between `const` and the name. It
-  counts a `const systemPrompt` inside a comment or a string literal too, which
-  fails closed: a spurious 2 is a loud error, never a silent skip.
-- In the rendered string, the `category slugs:` line, and **every** line whose
-  colon-terminated label ends in `demo slugs` — any prefix, any case, so
-  `LEGACY demo slugs:` counts — are held to exact set equality with the corpus,
-  and there must be exactly one line of each. The separator is a colon followed
-  by any amount of space or tab **including none**, so `demo slugs:snow2, …` and
-  a tab after the colon are both read. The label must begin the line (after
-  indentation) and contain no colon of its own, so a list introduced mid-line
-  after another colon — `Note: LEGACY demo slugs: …` — escapes, as does a label
-  whose values sit on the following line.
+- **Exactly one inline `const systemPrompt` declaration, counted across every
+  `<script>` block in the file.** Two regexes over `index.html`'s *source text*,
+  not a parse, so what they catch is a matter of spelling — stated here rather
+  than implied.
+
+  *Which blocks are read.* Every `<script …>` element, whatever attributes its
+  opening tag carries; only blocks with a `src=` are skipped, because they have
+  no inline body. It used to match the attribute-less `<script>` alone, and that
+  was an escape: a second `<script type="module">` block holding its own
+  `const systemPrompt` with a frozen list naming a retired demo was counted zero
+  times, so the guard saw one block, ran the declaration regex over that block
+  only, saw one declaration and exited 0 — while `index.html` shipped two live
+  prompts, both of which a browser executes.
+
+  *How a declaration is spelled.* The keyword `const`, one or more whitespace
+  characters (space, tab or line break), the identifier `systemPrompt`. Nothing
+  after the identifier is looked at, so a second declaration counts whatever it
+  is assigned and whatever trails the statement — a `// frozen legacy copy`
+  comment after the `;`, two spaces after `const`, a line break before the
+  backtick. The match is run twice, over the source and over a copy with every
+  `\uXXXX` / `\u{…}` escape decoded, and the larger count wins, because
+  `const \u0073ystemPrompt` is legal JavaScript binding the same name while
+  containing none of the literal characters. Decoding is used for counting only;
+  what gets rendered is always the raw source.
+
+  Any count other than one is a hard failure naming the count, and so is a
+  declaration whose value is not a backtick-delimited literal closed by
+  `` `; ``, because that one cannot be rendered. A second template appended
+  below the real one is a prompt nobody renders; one placed above it is rendered
+  *instead of* the real one.
+- In the rendered string, **every** line whose colon-terminated label contains
+  `category slugs` or `demo slugs` — any prefix, any suffix, any case, so
+  `LEGACY demo slugs:` and `demo slugs (legacy):` both count — is held to exact
+  set equality with the corpus, and there must be exactly one line of each. The
+  separator is a colon followed by any amount of space or tab **including
+  none**, so `demo slugs:snow2, …` and a tab after the colon are both read, and
+  a colon written as one of a known set of colon-shaped confusables (fullwidth
+  `：` among them) is folded to ASCII first. The label must begin the line
+  (after indentation) and contain no colon of its own.
 - Every `exception:` line that `DEMO_SITE_EXCEPTIONS` requires is present, and
   every concrete `systemslibrarian.github.io/<slug>/` URL in the rendered string
   is the live site of a demo the corpus carries.
 
-What it does **not** cover: prompt text that is not inside that one template —
-anything concatenated onto `systemPrompt` after the assignment, and the
-retrieved context, which is rendered here as a placeholder. The generator is
-never reimplemented for the check — a second copy of the logic drifts from the
-first and then agrees with itself. The same execution asserts
+The generator is never reimplemented for the check — a second copy of the logic
+drifts from the first and then agrees with itself. The same execution asserts
 `sourceChipHref()`'s return value for every corpus entry, which is the other
 consumer of that table.
 
-Every escape named above was found by walking through a version of this prose
-that claimed more than its mechanism delivered, so none of it is left as a
-memory: `node scripts/mutations.mjs` replays them. See [Mutation set](#mutation-set).
+### Known blind spots in the prompt check
+
+**This is the known set, not the complete set.** Every entry below was found by
+walking through a version of this prose that claimed more than its mechanism
+delivered. The previous version of this section presented its enumeration as
+*the* list of what escapes; a single adversarial pass then found four escapes it
+did not name — a second `<script>` block with attributes, a unicode-escaped
+identifier, a fullwidth colon, and a label with a suffix — all four of which
+were live. So the honest claim is that these are the holes someone has looked
+for and found, not that no others exist. A new one belongs on this list the day
+it is found, whether or not it is closed the same day.
+
+Not covered, and each of these currently escapes:
+
+- **A prompt bound some other way** — `let`/`var systemPrompt`, a reassignment
+  of the existing binding, a destructuring binding, or a second prompt under a
+  different identifier entirely. Only `const systemPrompt` is counted.
+- **A comment between the keyword and the name** — `const /*x*/ systemPrompt`.
+  The whitespace class does not span a comment.
+- **Text concatenated onto `systemPrompt` after the assignment.** That is inside
+  the one declaration, so it is not a second template at all, and nothing reads
+  it.
+- **A second prompt in an external script.** `<script src="…">` blocks are
+  skipped by design — they have no inline body to read. If the *only*
+  `const systemPrompt` moved into a `.js` file the zero-declaration guard fires,
+  so that much is caught; a second one added there alongside the inline one is
+  not, because the block count still reads one and the declaration count still
+  reads one. This repo ships no external script today.
+- **A slug list assembled outside that template** — built into the request
+  payload, or added as a second `messages` entry. Only the one rendered template
+  is read.
+- **The retrieved context**, which is rendered as a placeholder.
+- **A slug list introduced mid-line after another colon** — `Note: LEGACY demo
+  slugs: …` — or one whose values sit on the following line. The label must
+  start the line and hold no colon of its own.
+- **A colon confusable outside the known set**, or a homoglyph inside the words
+  `demo slugs` themselves. The fold covers eight colon-shaped characters; it is
+  not a general Unicode-confusables normalisation.
+- **An attribute value containing a literal `>`**, which truncates the opening
+  `<script` tag for the block matcher.
+
+Two over-matches are deliberate, and both fail closed — a spurious count is a
+loud error, never a silent skip: `const systemPrompt` written inside a comment
+or a string literal is counted, and so is a `\\u0073` inside a string literal
+that the decoder treats as an escape.
+
+Everything named above as *closed* is closed by mechanism, not by memory:
+`node scripts/mutations.mjs` replays each one. See
+[Mutation set](#mutation-set).
 
 It also holds the two reference docs to the corpus: `crypto_lab_readme` must list every demo entry exactly once, and each demo it features must have an entry — that doc is a prose snapshot of the catalog, and nothing checked it until it had fallen 97 demos behind. `crypto_compare_readme` quotes a sibling repo's totals, so the check reads that repo: see [Running the validator](#running-the-validator) for why an absent checkout is an error rather than a skip. CI runs the same check and **the GitHub Pages deploy will not run unless it passes**.
 
@@ -247,6 +303,17 @@ space after the colon; and three more ways to space a declaration — two spaces
 after `const`, a line break before the backtick, and a line break between
 `const` and the identifier. All five passed `d2415f0` with a retired slug live
 in the code path, and all five fail now.
+
+M18–M21 are four escapes a later audit found in `59015a9`: a second
+`<script type="module">` block carrying its own prompt (M18); a declaration
+whose identifier is spelled `\u0073ystemPrompt` (M19); a `LEGACY demo slugs`
+label separated by a fullwidth colon (M20); and a `demo slugs (legacy):` label,
+which starts with the matched words but carries a suffix (M21). M22 is that same
+suffix hole on the category list, found while closing M21. All five passed
+`59015a9`. M20 and M21 were verified by rendering the prompt on that tree: the
+retired slug is in the string the model is sent. M18 puts it in a second prompt
+the page also executes, and M19 in a second prompt appended to the same block.
+All five fail now.
 
 ## License
 

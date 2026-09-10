@@ -229,7 +229,20 @@ for (const [file, text] of [['index.html', html], ['README.md', readme], ['corpu
 // was matched by nothing. The line must still be one line — `[ \t]*`, not `\s*`,
 // so a value on the NEXT line is not swept up as if it were on this one, and a
 // label with an empty value still reads as "no such line".
-const listCheck = (labelPattern, text, expected, where) => {
+//
+// The separator is also not always an ASCII colon. `LEGACY demo slugs：<list>`,
+// written with a FULLWIDTH colon, renders into the string the model is sent and
+// reads to the model as a label exactly like the ASCII one — and `:` matched
+// none of it, so that list went unread with the validator green. Every
+// character in COLON_CONFUSABLES is folded to ASCII ":" before the text is
+// read, in the label and in the separator both. That list is the KNOWN set of
+// colon-shaped characters, not a proof of completeness: a confusable outside it
+// still escapes, and so does a label written with a homoglyph in "demo slugs"
+// itself.
+const COLON_CONFUSABLES = /[\uFF1A\uFE55\uFE13\u2236\uA789\u02D0\u05C3\u0589]/g;
+
+const listCheck = (labelPattern, rawText, expected, where) => {
+  const text = rawText.replace(COLON_CONFUSABLES, ':');
   const matches = [...text.matchAll(new RegExp(`^[ \\t]*(${labelPattern}):[ \\t]*(.+)$`, 'gmi'))];
   if (matches.length === 0) {
     fail(`${where} has no line whose label matches /${labelPattern}/i`);
@@ -276,11 +289,16 @@ if (app) {
       fail('the generated system prompt contains an uninterpolated "${" — the model would be sent template source');
     }
 
-    listCheck('category slugs', prompt, corpusCategories, 'generated system prompt');
-    // Any label ending in "demo slugs", whatever precedes it: `LEGACY demo
-    // slugs:`, `OLD demo slugs:`, `Demo slugs:`. A second slug list under a
-    // different name is still a slug list the model reads.
-    listCheck('[^:]*demo slugs', prompt, demoSlugs, 'generated system prompt');
+    // Any label CONTAINING "category slugs" / "demo slugs", whatever precedes or
+    // follows it: `LEGACY demo slugs:`, `Demo slugs:`, `demo slugs (legacy):`.
+    // A second slug list under a decorated name is still a slug list the model
+    // reads. The pattern used to be `[^:]*demo slugs`, which required the colon
+    // IMMEDIATELY after the word, so a label that merely STARTED with it —
+    // `demo slugs (legacy): snow2, aes-modes, steg-arena` — escaped while
+    // sitting in the rendered prompt. The label must still hold no colon of its
+    // own, on either side.
+    listCheck('[^:]*category slugs[^:]*', prompt, corpusCategories, 'generated system prompt');
+    listCheck('[^:]*demo slugs[^:]*', prompt, demoSlugs, 'generated system prompt');
 
     // Every deviating demo must be spelled out to the model. Listing a slug
     // whose site is NOT the default pattern, without also telling the model

@@ -38,7 +38,12 @@
 // the fixtures cited by the commits that introduced the checks, in commit order.
 // M13..M17 are the five spellings an adversarial audit of d2415f0 walked
 // through — two of them the audit's own (M13, M14), three more found while
-// closing those (M15, M16, M17).
+// closing those (M15, M16, M17). M18..M21 are four escapes a later audit found
+// in 59015a9: a second <script> block carrying its own prompt (M18), a
+// declaration whose identifier is spelled with a unicode escape (M19), a slug
+// label separated by a FULLWIDTH colon (M20), and a label with a suffix after
+// "demo slugs" (M21). M22 is the same suffix hole on the category list, found
+// while closing M21. All six passed 59015a9.
 //
 // NOT wired into CI. .github/workflows/pages.yml gates the deploy on
 // validate.mjs, and this harness spawns a validator run per fixture against a
@@ -119,6 +124,17 @@ FORMAT: One direct sentence first.\`;${tail}
 `;
 
 const FROZEN_LIST = `snow2, aes-modes, ${RETIRED}`;
+
+// A SECOND <script> block, with attributes, holding its own prompt. `attrs` is
+// whatever follows `<script` in the opening tag. Inserted before </body>, so it
+// is a sibling of the app's own block rather than nested in it — two live
+// `const systemPrompt` declarations, both of which a browser executes.
+const secondScriptBlock = (html, attrs, body) => {
+  const close = '\n</body>';
+  const i = html.lastIndexOf(close);
+  if (i === -1) throw new Error('mutation anchor not found: closing </body> in index.html');
+  return `${html.slice(0, i)}\n<script${attrs}>${body}</script>${html.slice(i)}`;
+};
 
 // The reason every extra-template fixture must fail for: app-runtime.mjs's
 // count guard fired and named 2. Deliberately not pinned to one wording of that
@@ -320,6 +336,74 @@ const MUTATIONS = [
     what: 'a second `const systemPrompt` template with a line break between `const` and the identifier',
     apply: (d) => editFile(d, 'index.html', (h) => appendToScript(h, secondTemplate('const\n    systemPrompt = ', '', FROZEN_LIST))),
     expect: EXTRA_TEMPLATE,
+  },
+
+  // This commit — four more escapes, from an adversarial audit of 59015a9.
+  // Every one of them PASSED that tree with a retired slug live in the code
+  // path, so none is a regression; they are the holes that were there already.
+  {
+    id: 'M18',
+    what: 'a second `<script type="module">` block holding its own `const systemPrompt` and a frozen slug list',
+    apply: (d) => editFile(d, 'index.html', (h) => secondScriptBlock(
+      h,
+      ' type="module"',
+      secondTemplate('const systemPrompt = ', '', FROZEN_LIST),
+    )),
+    // The harness's block count, naming 2. A reader that only sees the
+    // attribute-less block counts 1, runs the declaration regex over that block
+    // alone, and exits 0 while the page executes two prompts.
+    expect: /expected exactly one[^\n]*<script> block[^\n]*found 2/,
+  },
+  {
+    id: 'M19',
+    what: 'a second `const systemPrompt` whose identifier is spelled with a unicode escape (`\\u0073ystemPrompt`)',
+    // Legal JS: the escape binds the same name, so the page has two live
+    // prompts, while the source text never contains the literal spelling the
+    // declaration regex looks for.
+    apply: (d) => editFile(d, 'index.html', (h) => appendToScript(
+      h,
+      secondTemplate('const \\u0073ystemPrompt = ', '', FROZEN_LIST),
+    )),
+    expect: EXTRA_TEMPLATE,
+  },
+  {
+    id: 'M20',
+    what: `a "LEGACY demo slugs\uFF1A" line (FULLWIDTH colon) inside the real template, listing ${RETIRED}`,
+    // The list reaches the rendered prompt; listCheck's separator was an ASCII
+    // colon, so the line matched no label pattern and was never read.
+    apply: (d) => editFile(d, 'index.html', (h) => replaceOnce(
+      h,
+      '\n\nFORMAT: One direct sentence first.',
+      `\n\nLEGACY demo slugs\uFF1A${FROZEN_LIST}\n\nFORMAT: One direct sentence first.`,
+      'M20 FORMAT line of the real template',
+    )),
+    expect: /generated system prompt carries 2 lines whose label matches/,
+  },
+  {
+    id: 'M21',
+    what: `a "demo slugs (legacy): " line inside the real template, listing ${RETIRED}`,
+    // The label pattern required the colon IMMEDIATELY after "demo slugs", so a
+    // label that STARTS with it but carries a suffix escaped.
+    apply: (d) => editFile(d, 'index.html', (h) => replaceOnce(
+      h,
+      '\n\nFORMAT: One direct sentence first.',
+      `\n\ndemo slugs (legacy): ${FROZEN_LIST}\n\nFORMAT: One direct sentence first.`,
+      'M21 FORMAT line of the real template',
+    )),
+    expect: /generated system prompt carries 2 lines whose label matches/,
+  },
+  {
+    id: 'M22',
+    what: 'a "LEGACY category slugs: " line inside the real template',
+    // The same label-shape hole as M21, on the other vocabulary: the category
+    // list was matched by its EXACT label, so any prefix or suffix escaped.
+    apply: (d) => editFile(d, 'index.html', (h) => replaceOnce(
+      h,
+      '\n\nFORMAT: One direct sentence first.',
+      '\n\nLEGACY category slugs: hash, kem, retired-category\n\nFORMAT: One direct sentence first.',
+      'M22 FORMAT line of the real template',
+    )),
+    expect: /generated system prompt carries 2 lines whose label matches/,
   },
 ];
 

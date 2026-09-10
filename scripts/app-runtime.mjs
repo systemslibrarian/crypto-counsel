@@ -116,7 +116,45 @@ function makeContext() {
   return ctx;
 }
 
-const SCRIPT_RE = /<script>\n([\s\S]*?)\n<\/script>/g;
+// Every INLINE <script> block in the file, whatever attributes its opening tag
+// carries. Group 1 is the attribute text, group 2 the body.
+//
+// It used to be `/<script>\n([\s\S]*?)\n<\/script>/g` — attribute-less only —
+// and that was the escape. A second `<script type="module">` block, holding its
+// own `const systemPrompt` template with a frozen list naming a retired demo,
+// was invisible to it: the count guard below saw 1, the declaration regex ran
+// over the attribute-less block alone and saw 1, the validator exited 0, and
+// index.html shipped TWO live prompts, both of which a browser executes. That
+// is fixture M18 in scripts/mutations.mjs.
+//
+// Blocks with a `src=` attribute are the one exclusion, because they have no
+// inline body — nothing to run and nothing to search. Everything else counts.
+//
+// This is still a text match over HTML, not a parse, so: an attribute value
+// containing a literal `>` truncates the opening tag, and `<script` written
+// inside a comment or a JS string is counted. Both fail toward a wrong count,
+// which is a loud error rather than a silent skip.
+const SCRIPT_TAG_RE = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+const SCRIPT_SRC_ATTR_RE = /(?:^|\s)src\s*=/i;
+
+// Identifiers may be spelled with unicode escapes: `const \u0073ystemPrompt`
+// is legal JavaScript, binds the very same `systemPrompt`, and contains none of
+// the literal characters SYSTEM_PROMPT_DECL_RE looks for. So the declaration
+// count is taken over a decoded copy of the source as well as the raw text, and
+// the LARGER of the two wins. That is fixture M19.
+//
+// Only the two identifier-legal forms are decoded (`\uXXXX` and `\u{...}`);
+// `\xNN` is not valid in an identifier. Decoding is used for COUNTING only —
+// what gets rendered is always the raw source — and it over-decodes, since a
+// `\\u0073` inside a string literal is not an escape at all. That direction is
+// deliberate: it can only invent an extra declaration, which fails closed.
+const decodeIdentifierEscapes = (src) =>
+  src
+    .replace(/\\u\{([0-9a-fA-F]{1,6})\}/g, (m, hex) => {
+      const cp = parseInt(hex, 16);
+      return cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+    })
+    .replace(/\\u([0-9a-fA-F]{4})/g, (m, hex) => String.fromCharCode(parseInt(hex, 16)));
 
 // The `const systemPrompt = \`…\`;` assignment inside ask(). Lifted verbatim so
 // the harness renders the same string the model is sent, not a paraphrase of
@@ -185,16 +223,22 @@ const SYSTEM_PROMPT_RE = /(?<![$\w.])const\s+systemPrompt\s*=\s*`[\s\S]*?`;/g;
 export function loadApp(htmlPath) {
   const html = readFileSync(htmlPath, 'utf8');
 
-  const blocks = [...html.matchAll(SCRIPT_RE)].map((m) => m[1]);
+  const blocks = [...html.matchAll(SCRIPT_TAG_RE)]
+    .filter((m) => !SCRIPT_SRC_ATTR_RE.test(m[1]))
+    .map((m) => m[2]);
   if (blocks.length !== 1) {
     throw new Error(
-      `expected exactly one <script> block in ${htmlPath}, found ${blocks.length} — ` +
-        'the harness must run the whole app script, so update app-runtime.mjs deliberately',
+      `expected exactly one inline <script> block in ${htmlPath}, found ${blocks.length} — ` +
+        'every <script> is counted whatever attributes it carries, and only blocks with a src= ' +
+        '(which have no inline body) are skipped, because a second block executes in the browser ' +
+        'and would be a prompt nothing here reads. The harness must run the whole app script, ' +
+        'so update app-runtime.mjs deliberately',
     );
   }
   const source = blocks[0];
 
-  const declCount = [...source.matchAll(SYSTEM_PROMPT_DECL_RE)].length;
+  const countDecls = (text) => [...text.matchAll(SYSTEM_PROMPT_DECL_RE)].length;
+  const declCount = Math.max(countDecls(source), countDecls(decodeIdentifierEscapes(source)));
   if (declCount === 0) {
     throw new Error(
       `found 0 \`const systemPrompt\` declarations in ${htmlPath} — ` +
