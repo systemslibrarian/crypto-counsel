@@ -25,12 +25,12 @@ corpus.json         RAG corpus — 292 entries:
                       97 algorithm entries
                       192 crypto-lab demo cards + 1 standalone demo (snow2)
                       2 reference docs (crypto-compare, crypto-lab)
-algorithms.ts       Partial, richly-typed reference snapshot (59 of the 97
-                    algorithms) carried over from the crypto-compare project.
-                    NOT the source of truth and not imported at runtime; it
-                    references a type that doesn't exist in this repo, so it
-                    does not compile here. The maintained source of truth lives
-                    in the crypto-compare repository.
+algorithms.ts       Complete, richly-typed reference mirror (all 97 algorithms,
+                    an exact id match against corpus.json) carried over from the
+                    crypto-compare project. NOT the source of truth and not
+                    imported at runtime; it references a type that doesn't exist
+                    in this repo, so it does not compile here. The maintained
+                    source of truth lives in the crypto-compare repository.
 worker/             Cloudflare Worker proxy for Groq API
   index.js          Streams Groq responses through to the client. Hardened:
                     CORS-locked, rate-limited per IP, and the request is
@@ -42,7 +42,13 @@ scripts/
   validate.mjs      Dependency-free repo health check (corpus parses, model is
                     current, every slug/URL/count written down anywhere matches
                     the corpus, and the reference docs list every demo the
-                    corpus carries). Gates the deploy.
+                    corpus carries). Gates the deploy. Requires a crypto-compare
+                    checkout — see "Running the validator" below.
+  app-runtime.mjs   Boots index.html's real script under node:vm and a DOM stub,
+                    so validate.mjs can assert on the system prompt the model is
+                    actually sent rather than on what index.html's source looks
+                    like. The generator is never reimplemented here; a second
+                    copy would drift and then assert against itself.
 .github/workflows/
   pages.yml         Validates then deploys the front-end to GitHub Pages
 CNAME               GitHub Pages custom domain
@@ -54,6 +60,28 @@ The front-end reaches the Worker at two endpoints, primary first with automatic 
 |------|-----|
 | Primary | `https://api.crypto-counsel.systemslibrarian.dev` |
 | Fallback | `https://crypto-counsel-proxy.systemslibrarian.workers.dev` |
+
+### Running the validator
+
+```
+node scripts/validate.mjs
+```
+
+It needs a **crypto-compare checkout** to be present, and it fails if there isn't one:
+
+```
+git clone https://github.com/systemslibrarian/crypto-compare.git ../crypto-compare
+# or point it anywhere:  CRYPTO_COMPARE_DIR=/path/to/crypto-compare node scripts/validate.mjs
+```
+
+That is deliberate. Two facts stated in `corpus.json` prose — how many unique
+crypto-lab demos crypto-compare links, and which `?cat=` slugs it defines — can
+only be settled by reading that repo. The check used to derive them *when the
+sibling happened to be there* and trust a pinned constant otherwise, which meant
+it did nothing in CI, the one place it runs unattended: a drift from 192 to 193
+passed green. An unknown `?cat=` returns HTTP 200 and simply filters nothing, so
+no status-code check can stand in for this. "We could not look" must not read as
+"it is fine", so absence is now an error, and the CI job checks the repo out.
 
 ## How it works (Cloudflare + Groq)
 
@@ -126,10 +154,22 @@ It verifies `corpus.json` parses and the front-end model is current (and matches
 - every `demo_*` id — not just `demo_crypto_lab_*`, the filter that hid `demo_snow2` from every check for as long as it has existed;
 - every hardcoded `systemslibrarian.github.io/<slug>/` URL in `index.html` and this README, which must be the live site of a demo that exists (this is what a dead `steg-arena` reference trips on, and an HTTP status check would not: `?cat=` typos on the static-export crypto-compare return 200 while filtering nothing);
 - `DEMO_SITE_EXCEPTIONS`, the single table demo links resolve through — every key must be a real demo, and none may restate the default pattern;
-- the category and demo-slug lists in this README, and either list if it is ever re-frozen as literal text in the system prompt;
-- every corpus count quoted in this README's prose and architecture block.
+- the category and demo-slug lists in this README;
+- every corpus count quoted in this README's prose and architecture block, in `algorithms.ts`'s own header, and in the welcome copy `index.html` shows the visitor;
+- `algorithms.ts` calls itself a complete mirror, so its ids are held to exact set equality with the corpus's algorithm entries and every entry must carry the full field set. It spent its whole life labelled "PARTIAL SNAPSHOT … only 59 of those algorithms" while holding all 97, and README.md repeated the 59, because no check had ever read either sentence.
 
-It also holds the two reference docs to the corpus: `crypto_lab_readme` must list every demo entry exactly once, and each demo it features must have an entry — that doc is a prose snapshot of the catalog, and nothing checked it until it had fallen 97 demos behind. `crypto_compare_readme` quotes a sibling repo's totals, which cannot be derived here; they are pinned to one constant, and when `../crypto-compare` is checked out beside this repo the check re-derives them from its source and fails on disagreement. CI has no such checkout, so that re-derivation is a local-only backstop. CI runs the same check and **the GitHub Pages deploy will not run unless it passes**.
+**The system prompt is checked by running it, not by reading it.** Its two link
+vocabularies are generated from the corpus by `buildLinkRules()`, so there is no
+literal list to compare — and when they stopped being literals, the old
+`if (line.includes('${')) return;` skipped both assertions and left them inert.
+`scripts/app-runtime.mjs` now boots `index.html`'s real script under `node:vm`
+and renders the actual prompt string; the slug lists, the exception lines and
+every URL in it are asserted against the corpus. The generator is never
+reimplemented for the check — a second copy of the logic drifts from the first
+and then agrees with itself. The same execution asserts `sourceChipHref()`'s
+return value for every corpus entry, which is the other consumer of that table.
+
+It also holds the two reference docs to the corpus: `crypto_lab_readme` must list every demo entry exactly once, and each demo it features must have an entry — that doc is a prose snapshot of the catalog, and nothing checked it until it had fallen 97 demos behind. `crypto_compare_readme` quotes a sibling repo's totals, so the check reads that repo: see [Running the validator](#running-the-validator) for why an absent checkout is an error rather than a skip. CI runs the same check and **the GitHub Pages deploy will not run unless it passes**.
 
 ## License
 

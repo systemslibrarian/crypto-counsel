@@ -11,6 +11,7 @@
 // written-down thing.
 
 import { existsSync, readFileSync } from 'node:fs';
+import { loadApp } from './app-runtime.mjs';
 
 const errors = [];
 const fail = (msg) => errors.push(msg);
@@ -22,17 +23,55 @@ const DEPRECATED_MODELS = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile'];
 
 // crypto-compare's /labs index counts the unique crypto-lab demos reachable
 // from its algorithm reference: `LABS.length` in src/components/LabsView.tsx,
-// i.e. buildLabIndex() over src/data/demoResources.ts. The number is pinned
-// here because CI has no crypto-compare checkout; when one IS present beside
-// this repo, the check at the bottom re-derives it from that file and fails on
-// disagreement rather than trusting this constant.
-const COMPARE_LINKED_DEMOS = 192;
-const COMPARE_DEMO_RESOURCES = '../crypto-compare/src/data/demoResources.ts';
-const COMPARE_CATEGORIES = '../crypto-compare/src/data/categories.ts';
+// i.e. buildLabIndex() over src/data/demoResources.ts. `crypto_compare_readme`
+// states that figure in prose, twice, and this file is the only thing that can
+// contradict it.
+//
+// It used to be a typed constant, `COMPARE_LINKED_DEMOS = 192`, re-derived from
+// the sibling checkout only `if (existsSync(...))`. That made the guard inert
+// in the one place it runs unattended: CI has no crypto-compare checkout, so a
+// drift to 193 sailed through green — a check that is skipped exactly where it
+// matters is not a check. There is no constant now. The count is derived from
+// crypto-compare's own source, and an absent checkout is a hard failure rather
+// than a skip, because "we could not look" must never read as "it is fine".
+// CI supplies the checkout (see .github/workflows/pages.yml); a different
+// location can be pointed at with CRYPTO_COMPARE_DIR.
+const COMPARE_DIRS = [
+  process.env.CRYPTO_COMPARE_DIR,
+  '../crypto-compare',
+  'vendor/crypto-compare', // where CI checks it out
+].filter(Boolean).map((d) => (d.endsWith('/') ? d : `${d}/`));
+const COMPARE_DEMO_RESOURCES = 'src/data/demoResources.ts';
+const COMPARE_CATEGORIES = 'src/data/categories.ts';
 
 const root = new URL('..', import.meta.url);
 const read = (p) => readFileSync(new URL(p, root), 'utf8');
 const sibling = (p) => new URL(p, root);
+
+// --- crypto-compare, located and read before anything asserts against it ---
+const compareRoot = COMPARE_DIRS.find((d) => existsSync(sibling(d + COMPARE_DEMO_RESOURCES)));
+let compareLinkedDemos = null;
+if (!compareRoot) {
+  fail(
+    'crypto-compare is not checked out anywhere this script can see, so its linked-demo count ' +
+      'cannot be derived and the crypto_compare_readme prose is unverifiable. Looked in: ' +
+      `${COMPARE_DIRS.join(', ')}. Clone it beside this repo, or set CRYPTO_COMPARE_DIR. ` +
+      'This is deliberately fatal: skipping on absence is how the old pinned constant went inert in CI.',
+  );
+} else {
+  const src = readFileSync(sibling(compareRoot + COMPARE_DEMO_RESOURCES), 'utf8');
+  const slugs = new Set(
+    [...src.matchAll(/url:\s*"([^"]+)"/g)].map((m) => m[1].match(/\/(crypto-lab-[a-z0-9-]+)\/?$/)?.[1]).filter(Boolean),
+  );
+  if (slugs.size === 0) {
+    fail(
+      `${compareRoot}${COMPARE_DEMO_RESOURCES} parsed to 0 crypto-lab demo URLs — the extraction regex ` +
+        'has stopped matching that file. Fix the regex; do not edit the prose to agree with 0.',
+    );
+  } else {
+    compareLinkedDemos = slugs.size;
+  }
+}
 
 // --- corpus.json ---
 let corpus = [];
@@ -149,28 +188,136 @@ for (const [file, text] of [['index.html', html], ['README.md', readme], ['corpu
   }
 }
 
-// --- the system prompt's vocabularies ---
-// Both lists are generated from the corpus at runtime. If either is re-frozen
-// as literal text, it is held to exact set equality with the corpus instead —
-// a written-down list that is merely *close* is the failure mode here.
-const listCheck = (label, line, expected, where) => {
-  if (!line) {
+// --- the system prompt the model is ACTUALLY sent ---
+// These two vocabularies used to be frozen literals in the prompt, checked
+// here against the corpus. Replacing them with buildLinkRules() was the right
+// fix and it turned the check off: the lines became template literals holding
+// `${`, and this block's `if (line.includes('${')) return;` early-return skipped
+// them from that day on. Nothing looked at the generator's output, so reverting
+// buildLinkRules()' filter to `demo_crypto_lab_` — which drops snow2 from the
+// prompt and sends the model back to the 404ing `crypto-lab-snow2` URL — left
+// the validator green and the deploy shipping.
+//
+// So the source text is no longer what gets read. index.html's script is
+// executed headlessly (scripts/app-runtime.mjs) and the assertions below run
+// against the rendered prompt string. Reading the generated output also closes
+// a hole the old source-text check never covered: a frozen list re-added to the
+// prompt template OUTSIDE buildLinkRules() would have been invisible to it, and
+// is not invisible to this.
+// Checks EVERY occurrence of the line, and requires there to be exactly one.
+// Taking only the first match would let a second, frozen copy be appended below
+// the generated one and never be read — which is the same class of hole as the
+// `${` early-return this replaces, just one layer in.
+const listCheck = (label, text, expected, where) => {
+  const lines = [...text.matchAll(new RegExp(`^\\s*${label}: (.+)$`, 'gm'))].map((m) => m[1]);
+  if (lines.length === 0) {
     fail(`${where} has no "${label}" line`);
     return;
   }
-  if (line.includes('${')) return; // generated at runtime from the corpus
-  const got = line.split(',').map((s) => s.trim()).filter(Boolean);
-  const gotSet = new Set(got);
-  const missing = expected.filter((s) => !gotSet.has(s));
-  const extra = got.filter((s) => !expected.includes(s));
-  if (missing.length) fail(`${where} "${label}" is missing ${missing.length}: ${missing.join(', ')}`);
-  if (extra.length) fail(`${where} "${label}" lists ${extra.length} unknown value(s): ${extra.join(', ')}`);
+  if (lines.length > 1) {
+    fail(`${where} states "${label}" ${lines.length} times — there must be exactly one, generated from the corpus`);
+  }
+  for (const line of lines) {
+    const got = line.split(',').map((s) => s.trim()).filter(Boolean);
+    const gotSet = new Set(got);
+    const missing = expected.filter((s) => !gotSet.has(s));
+    const extra = got.filter((s) => !expected.includes(s));
+    if (missing.length) fail(`${where} "${label}" is missing ${missing.length}: ${missing.join(', ')}`);
+    if (extra.length) fail(`${where} "${label}" lists ${extra.length} unknown value(s): ${extra.join(', ')}`);
+  }
 };
 
-// The leading-character class lets the line be found whether it is prose inside
-// a prompt template or a string literal inside the generator.
-listCheck('category slugs', html.match(/^[\s'"`]*category slugs: (.+)$/m)?.[1], corpusCategories, 'index.html system prompt');
-listCheck('demo slugs', html.match(/^[\s'"`]*demo slugs: (.+)$/m)?.[1], demoSlugs, 'index.html system prompt');
+let app = null;
+try {
+  app = loadApp(sibling('index.html'));
+  app.load(corpus);
+} catch (e) {
+  fail(`could not run index.html's script headlessly: ${e.message}`);
+}
+
+if (app) {
+  let prompt = null;
+  try {
+    prompt = app.renderSystemPrompt('RETRIEVED CONTEXT PLACEHOLDER');
+  } catch (e) {
+    fail(`index.html's system prompt template threw when rendered: ${e.message}`);
+  }
+
+  if (prompt) {
+    // A literal `${` surviving into the rendered prompt means a template was
+    // nested into a plain string somewhere and the model is being handed
+    // source code instead of a vocabulary.
+    if (prompt.includes('${')) {
+      fail('the generated system prompt contains an uninterpolated "${" — the model would be sent template source');
+    }
+
+    listCheck('category slugs', prompt, corpusCategories, 'generated system prompt');
+    listCheck('demo slugs', prompt, demoSlugs, 'generated system prompt');
+
+    // Every deviating demo must be spelled out to the model. Listing a slug
+    // whose site is NOT the default pattern, without also telling the model
+    // where it really lives, is exactly the snow2 defect.
+    for (const [slug, url] of exceptions) {
+      if (!prompt.includes(`exception: ${slug} → ${url}`)) {
+        fail(
+          `the generated system prompt never tells the model that "${slug}" lives at ${url} — ` +
+            'without that line the model builds the default crypto-lab URL, which 404s',
+        );
+      }
+    }
+
+    // And every concrete URL the prompt hands the model must be a demo that
+    // exists. Template forms (`crypto-lab-<demo-slug>/`) do not match: `<` is
+    // outside the character class.
+    const seenPromptUrls = new Set();
+    for (const m of prompt.matchAll(/https:\/\/systemslibrarian\.github\.io\/[a-z0-9][a-z0-9.-]*\//g)) {
+      if (seenPromptUrls.has(m[0])) continue;
+      seenPromptUrls.add(m[0]);
+      if (!validDemoUrls.has(m[0])) {
+        fail(`the generated system prompt tells the model to link ${m[0]}, which is not the live site of any corpus demo`);
+      }
+    }
+  }
+
+  // --- source chips resolve through the same one table ---
+  // sourceChipHref() is the other consumer of DEMO_SITE_EXCEPTIONS, and it had
+  // the same defect independently: with the branch filtering on
+  // `demo_crypto_lab_`, demo_snow2 fell through to the algorithm branch and its
+  // chip pointed at the crypto-compare homepage. Assert the real function's
+  // return value for every entry, not the shape of its source.
+  //
+  // First confirm the regex-parsed exception table above IS the map the app
+  // uses — if that parse ever yields nothing, `demoUrl` silently returns the
+  // default for everything and this whole section would agree with itself.
+  const realExceptions = new Map(Object.entries(app.DEMO_SITE_EXCEPTIONS || {}));
+  for (const [slug, url] of realExceptions) {
+    if (exceptions.get(slug) !== url) {
+      fail(`DEMO_SITE_EXCEPTIONS at runtime maps ${slug} → ${url}, but this script parsed ${exceptions.get(slug) ?? '(nothing)'}`);
+    }
+  }
+  for (const slug of exceptions.keys()) {
+    if (!realExceptions.has(slug)) fail(`this script parsed an exception for "${slug}" that the running app does not have`);
+  }
+
+  for (const e of demoEntries) {
+    const want = demoUrl(demoSlug(e.id));
+    const got = app.sourceChipHref({ id: e.id });
+    if (got !== want) fail(`index.html sourceChipHref("${e.id}") returns ${got}; that demo's live site is ${want}`);
+  }
+
+  const COMPARE_BASE = 'https://crypto-compare.systemslibrarian.dev/';
+  for (const e of [...algorithmEntries, ...corpus.filter((c) => REFERENCE_DOCS.includes(c.id))]) {
+    const got = app.sourceChipHref({ id: e.id });
+    if (!got.startsWith(COMPARE_BASE)) {
+      fail(`index.html sourceChipHref("${e.id}") returns ${got}; a non-demo entry must link to crypto-compare`);
+      continue;
+    }
+    const cat = new URL(got).searchParams.get('cat');
+    if (cat !== null && !corpusCategories.includes(cat)) {
+      fail(`index.html sourceChipHref("${e.id}") links ?cat=${cat}, which is not a category the corpus uses`);
+    }
+  }
+}
 
 // --- README bookkeeping ---
 // Substring matching used to stand in for membership here. It cannot tell a
@@ -215,16 +362,26 @@ const counts = {
 };
 counts.standalone = counts.demos - counts.cryptoLab;
 
-const numberCheck = (re, expected, what) => {
-  const m = readme.match(re);
-  if (!m) {
-    fail(`README.md has no "${what}" line to check against the corpus`);
+// `where` names the file so the same helper can police counts wherever they
+// are written down; README.md is merely the commonest place. `occurrences`
+// pins how many times the line must appear, because a count duplicated across
+// two live-served copies can drift in one of them (index.html states its
+// algorithm total twice — once in the static welcome block, once in the
+// rehydrate template — and only the first was ever visible to a reader).
+const countIn = (where, text, re, expected, what, occurrences = 1) => {
+  const found = [...text.matchAll(new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`))];
+  if (found.length !== occurrences) {
+    fail(`${where} has ${found.length} "${what}" line(s) to check against the corpus; expected ${occurrences}`);
     return;
   }
-  m.slice(1).forEach((got, i) => {
-    if (Number(got) !== expected[i]) fail(`README.md "${what}" says ${got}, corpus has ${expected[i]}`);
-  });
+  for (const m of found) {
+    m.slice(1).forEach((got, i) => {
+      if (Number(got) !== expected[i]) fail(`${where} "${what}" says ${got}, corpus has ${expected[i]}`);
+    });
+  }
 };
+
+const numberCheck = (re, expected, what) => countIn('README.md', readme, re, expected, what);
 
 numberCheck(/RAG corpus of (\d+) algorithms/, [counts.algorithms], 'RAG corpus of N algorithms');
 numberCheck(
@@ -240,6 +397,58 @@ numberCheck(
   'architecture: N crypto-lab demo cards + N standalone',
 );
 numberCheck(/^\s*(\d+) reference docs \(/m, [counts.referenceDocs], 'architecture: N reference docs');
+
+// --- algorithms.ts describes itself, and the description must be true ---
+// Its header claimed "PARTIAL SNAPSHOT … currently covers only 59 of those
+// algorithms" and README.md repeated the 59. The file holds 97 ids, unique, an
+// exact set match against the corpus's 97 algorithm entries, every rich field
+// populated — so both the adjective and the digits were wrong, from the day
+// they were written, on a file GitHub Pages serves. No regex here matched
+// either sentence, which is why it survived three passes over this repo.
+//
+// Both numbers are now derived twice over: against the ids in algorithms.ts
+// itself and against corpus.json. The word "complete" is not taken on trust
+// either — the set comparison below is what makes it a claim rather than an
+// adjective.
+const algorithmsTs = read('algorithms.ts');
+const tsAlgorithmIds = [...algorithmsTs.matchAll(/^\s*\{\s*id:\s*"([^"]+)"/gm)].map((m) => m[1]);
+const tsIdSet = new Set(tsAlgorithmIds);
+
+if (tsAlgorithmIds.length === 0) {
+  fail('algorithms.ts parsed to 0 algorithm entries — the id extraction has broken; fix it, do not restate the count');
+} else {
+  if (tsIdSet.size !== tsAlgorithmIds.length) {
+    fail(`algorithms.ts holds ${tsAlgorithmIds.length} entries but only ${tsIdSet.size} unique ids`);
+  }
+  const corpusAlgIds = new Set(algorithmEntries.map((e) => e.id));
+  const notInCorpus = [...tsIdSet].filter((id) => !corpusAlgIds.has(id));
+  const notInTs = [...corpusAlgIds].filter((id) => !tsIdSet.has(id));
+  if (notInCorpus.length) {
+    fail(`algorithms.ts defines ${notInCorpus.length} algorithm(s) the corpus does not carry: ${notInCorpus.join(', ')}`);
+  }
+  if (notInTs.length) {
+    fail(
+      `algorithms.ts is missing ${notInTs.length} of the corpus's algorithms (${notInTs.join(', ')}) — ` +
+        'it is described as a complete mirror in its own header and in README.md; either restore them or reword both',
+    );
+  }
+  // Every entry must carry the rich fields, or "richly-typed reference" is the
+  // next adjective quietly going false.
+  for (const field of ['name', 'category', 'useCases', 'recommendationRationale', 'whyNotThis', 'assumptions', 'bestAttack']) {
+    const n = [...algorithmsTs.matchAll(new RegExp(`\\b${field}\\s*:`, 'g'))].length;
+    if (n !== tsAlgorithmIds.length) {
+      fail(`algorithms.ts has ${n} "${field}" fields for ${tsAlgorithmIds.length} entries — it is not the complete mirror it claims to be`);
+    }
+  }
+}
+
+countIn('algorithms.ts', algorithmsTs, /reads corpus\.json \((\d+) algorithms\)/, [counts.algorithms], 'header: corpus.json (N algorithms)');
+countIn('algorithms.ts', algorithmsTs, /covers all (\d+) of them/, [tsAlgorithmIds.length], 'header: covers all N of them');
+numberCheck(/reference mirror \(all (\d+) algorithms/, [tsAlgorithmIds.length], 'architecture: algorithms.ts mirror of all N');
+
+// index.html states its algorithm total to the visitor, twice: the static
+// welcome block and the rehydrate template that rebuilds it. Both are served.
+countIn('index.html', html, /trained on (\d+) cryptographic algorithms/, [counts.algorithms], 'welcome: trained on N cryptographic algorithms', 2);
 
 // --- reference docs must list every demo the corpus carries ---
 // corpus.json holds two prose reference docs alongside the per-demo entries.
@@ -304,19 +513,24 @@ if (labDoc) {
 }
 
 // `crypto_compare_readme` states crypto-compare's own totals in prose, twice.
-// They are a snapshot of a sibling repo, so they cannot be derived here — but
-// they can be pinned to one constant and re-derived whenever that repo is
-// checked out beside this one. A previous pass moved this figure from 97 to 123
-// by hand and filed it as fixed; both were wrong.
+// Both are now compared against the count derived from crypto-compare's own
+// source above — never against a number typed into this file. A previous pass
+// moved this figure from 97 to 123 by hand and filed it as fixed; both were
+// wrong, and a typed constant could not have told anyone.
 const compareDoc = corpus.find((e) => e.id === 'crypto_compare_readme');
 if (compareDoc) {
   const stated = [...compareDoc.text.matchAll(/(\d+) unique linked public demos/g)].map((m) => Number(m[1]));
   if (stated.length < 2) {
     fail(`crypto_compare_readme states its linked-demo count ${stated.length} time(s); expected 2 (Description and Coverage)`);
   }
-  for (const n of stated) {
-    if (n !== COMPARE_LINKED_DEMOS) {
-      fail(`crypto_compare_readme says ${n} unique linked public demos; crypto-compare links ${COMPARE_LINKED_DEMOS}`);
+  if (compareLinkedDemos !== null) {
+    for (const n of stated) {
+      if (n !== compareLinkedDemos) {
+        fail(
+          `crypto_compare_readme says ${n} unique linked public demos; ${compareRoot}${COMPARE_DEMO_RESOURCES} ` +
+            `links ${compareLinkedDemos}`,
+        );
+      }
     }
   }
   for (const m of compareDoc.text.matchAll(/(\d+) categories/g)) {
@@ -331,23 +545,21 @@ if (compareDoc) {
   }
 }
 
-// --- cross-repo re-derivation, when crypto-compare is checked out beside us ---
-// Read-only. Absent in CI, which is why COMPARE_LINKED_DEMOS is pinned above;
-// present locally, it is the only real oracle for these two facts.
-if (existsSync(sibling(COMPARE_DEMO_RESOURCES))) {
-  const src = readFileSync(sibling(COMPARE_DEMO_RESOURCES), 'utf8');
-  const slugs = new Set(
-    [...src.matchAll(/url:\s*"([^"]+)"/g)].map((m) => m[1].match(/\/(crypto-lab-[a-z0-9-]+)\/?$/)?.[1]).filter(Boolean),
+// --- cross-repo re-derivation against crypto-compare's category vocabulary ---
+// Read-only. Like the linked-demo count above, an absent checkout is fatal
+// rather than skipped: a `?cat=` value crypto-compare does not define returns
+// HTTP 200 and silently filters nothing, so this comparison is the only thing
+// that can catch it, and it has to actually run.
+if (!compareRoot) {
+  fail(
+    'crypto-compare is not checked out, so the corpus category vocabulary cannot be checked against ' +
+      'the one crypto-compare actually defines — an unknown ?cat= returns 200 and filters nothing, ' +
+      'so nothing else can catch it',
   );
-  if (slugs.size !== COMPARE_LINKED_DEMOS) {
-    fail(
-      `crypto-compare now links ${slugs.size} unique demos, but COMPARE_LINKED_DEMOS is pinned at ${COMPARE_LINKED_DEMOS} ` +
-        '— update the constant and the crypto_compare_readme prose together',
-    );
-  }
-}
-if (existsSync(sibling(COMPARE_CATEGORIES))) {
-  const src = readFileSync(sibling(COMPARE_CATEGORIES), 'utf8');
+} else if (!existsSync(sibling(compareRoot + COMPARE_CATEGORIES))) {
+  fail(`${compareRoot}${COMPARE_CATEGORIES} is missing from the crypto-compare checkout`);
+} else {
+  const src = readFileSync(sibling(compareRoot + COMPARE_CATEGORIES), 'utf8');
   const real = [...src.matchAll(/\{\s*id:\s*"([a-z_]+)"/g)].map((m) => m[1]).sort();
   const realSet = new Set(real);
   const bogus = corpusCategories.filter((c) => !realSet.has(c));

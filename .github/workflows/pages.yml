@@ -31,6 +31,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # crypto-compare is the only oracle for two facts the corpus states in
+      # prose: how many unique crypto-lab demos its algorithm reference links,
+      # and which ?cat= slugs it actually defines. validate.mjs used to derive
+      # both only `if (existsSync(...))` and fall back to a pinned constant --
+      # which meant that in CI, the one place it runs unattended, neither check
+      # ran at all and a drift to 193 passed green. It is a hard failure now
+      # when the checkout is absent, so CI has to supply it. Public repo, so
+      # the default GITHUB_TOKEN is enough; it is read-only reference data and
+      # lands OUTSIDE the deploy job, which takes its own clean checkout, so
+      # nothing here reaches the published artifact.
+      - name: Check out crypto-compare (cross-repo oracle)
+        uses: actions/checkout@v7
+        with:
+          repository: systemslibrarian/crypto-compare
+          ref: main
+          path: vendor/crypto-compare
+          persist-credentials: false
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:

@@ -1,11 +1,23 @@
-// PARTIAL SNAPSHOT — not the source of truth and not imported at runtime.
-// The runtime app reads corpus.json (97 algorithms). This file is an older,
-// richly-typed reference copy carried over from the crypto-compare project and
-// currently covers only 59 of those algorithms. It also imports a type
-// (@/types/crypto) that does not exist in this repo, so it does NOT compile
-// here on its own — treat it as read-only reference, not buildable code.
-// The maintained source of truth lives in the crypto-compare repository.
-// See README ("Architecture" → algorithms.ts).
+// COMPLETE MIRROR — not the source of truth and not imported at runtime.
+// The runtime app reads corpus.json (97 algorithms). This file is a
+// richly-typed reference copy carried over from the crypto-compare project,
+// and it covers all 97 of them: its ids are an exact set match against
+// corpus.json's algorithm entries, every one of them with the full rich field
+// set populated.
+//
+// This header used to read "PARTIAL SNAPSHOT … currently covers only 59 of
+// those algorithms", and README.md repeated the 59. Both were false for as
+// long as either had existed, and both were served live, because no check ever
+// compared them to the file they described. scripts/validate.mjs now reads
+// both figures out of this header and compares each against the id count in
+// this very file AND against corpus.json, and it settles the word "COMPLETE"
+// by set equality rather than taking the adjective on trust. Change the
+// contents and the claim fails until it is true again.
+//
+// It still imports a type (@/types/crypto) that does not exist in this repo,
+// so it does NOT compile here on its own — treat it as read-only reference,
+// not buildable code. The maintained source of truth lives in the
+// crypto-compare repository. See README ("Architecture" → algorithms.ts).
 import type { Algorithm } from "@/types/crypto";
 
 export const ALGORITHMS: Algorithm[] = [

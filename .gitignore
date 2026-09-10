@@ -1,3 +1,4 @@
 oci.key
 worker/.wrangler/
 node_modules/
+vendor/
