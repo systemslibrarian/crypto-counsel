@@ -137,7 +137,10 @@ const validDemoUrls = new Set(demoSlugs.map(demoUrl));
 // --- every hardcoded demo URL must resolve to a demo that exists ---
 // Template forms (`crypto-lab-${slug}/`, `crypto-lab-<demo-slug>/`) are skipped
 // because the trailing `/` cannot follow an interpolation marker.
-for (const [file, text] of [['index.html', html], ['README.md', readme]]) {
+// The corpus's own prose counts too: every entry carries a "Live Demo" link,
+// and that is the other place a retired demo's URL would sit unnoticed.
+const corpusProse = corpus.map((e) => (typeof e.text === 'string' ? e.text : '')).join('\n');
+for (const [file, text] of [['index.html', html], ['README.md', readme], ['corpus.json', corpusProse]]) {
   const seen = new Set();
   for (const m of text.matchAll(/https:\/\/systemslibrarian\.github\.io\/[a-z0-9][a-z0-9.-]*\//g)) {
     if (seen.has(m[0])) continue;
