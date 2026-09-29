@@ -15,6 +15,9 @@ import { loadApp } from './app-runtime.mjs';
 
 const errors = [];
 const fail = (msg) => errors.push(msg);
+// Filled in below; printed with the pass line so a run always says how much of
+// the ancestry rule it was actually able to apply.
+let ancestryReport = 'reviewed commits verified against origin/main: not attempted';
 
 // Models we consider current/supported. Update intentionally when migrating.
 const SUPPORTED_MODELS = new Set(['openai/gpt-oss-120b', 'openai/gpt-oss-20b']);
@@ -139,6 +142,35 @@ for (const e of demoEntries) {
   for (const k of Object.keys(r)) {
     if (k !== 'lab_commit' && k !== 'date') fail(`${e.id}.reviewed carries an unknown key "${k}"`);
   }
+}
+
+// A reviewed commit must be in that lab's origin/main history, or it is not a
+// baseline: the prose was written from a build no visitor can reach. On
+// 2026-09-29 eight entries were pinned to commits on a lane's local
+// `verdict-harness` branch, and one of them described a control that exists on
+// no published branch.
+//
+// This can only be asked where the clone is, which is a developer's machine and
+// not CI. So it checks what it can and SAYS how many it could check: a silent
+// skip would let the one environment that can catch this report the same clean
+// line as the one that cannot. An absent clone is not a failure here —
+// tools/corpus-freshness.js in the catalog repo is what surveys the fleet.
+{
+  const { spawnSync } = await import('node:child_process');
+  let checked = 0, unverifiable = 0;
+  for (const e of demoEntries) {
+    if (!e.reviewed) continue;
+    const slug = demoSlug(e.id);
+    const dir = new URL(`../../crypto-lab-${slug}/`, import.meta.url).pathname;
+    if (!existsSync(dir)) { unverifiable++; continue; }
+    const probe = spawnSync('git', ['-C', dir, 'merge-base', '--is-ancestor', e.reviewed.lab_commit, 'origin/main'], { stdio: 'ignore' });
+    if (probe.error || probe.status === null || probe.status > 1) { unverifiable++; continue; }
+    checked++;
+    if (probe.status === 1) {
+      fail(`${e.id}.reviewed.lab_commit ${e.reviewed.lab_commit.slice(0, 8)} is not in crypto-lab-${slug}'s origin/main history — that review was of a build nobody else can reach; re-read at origin/main and re-pin`);
+    }
+  }
+  ancestryReport = `reviewed commits verified against origin/main: ${checked}, not verifiable here: ${unverifiable}`;
 }
 const demoSlugSet = new Set(demoSlugs);
 
@@ -661,3 +693,4 @@ console.log(
     `(${counts.cryptoLab} crypto-lab + ${counts.standalone} standalone), ` +
     `${corpusCategories.length} categories, model ${modelMatch[1]}`,
 );
+console.log(`  ${ancestryReport}`);
