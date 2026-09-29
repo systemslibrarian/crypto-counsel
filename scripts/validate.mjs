@@ -105,6 +105,41 @@ const REFERENCE_DOCS = ['crypto_lab_readme', 'crypto_compare_readme'];
 const demoEntries = corpus.filter((e) => typeof e.id === 'string' && e.id.startsWith('demo_'));
 const demoSlug = (id) => id.replace(/^demo_(?:crypto_lab_)?/, '').replace(/_/g, '-');
 const demoSlugs = demoEntries.map((e) => demoSlug(e.id)).sort();
+
+// Every demo entry records when its prose was last checked against its lab, or
+// records that it never has been. The field is REQUIRED and its absence is a
+// failure, because the alternative - a missing field read as "probably fine" -
+// is the state this exists to end. `null` is a legitimate value and means never
+// reviewed; it is not a placeholder to be filled in with today's date. A date
+// nobody earned is worse than no date, since it reads identically to one that
+// was, and tools/corpus-freshness.js in the catalog repo reports on exactly
+// this field.
+//
+// Export Grade is why it exists: that lab gained two exhibits at b61f133 while
+// its entry went on describing four panes, and nothing in either repo could
+// notice. corpus-sync answers WHICH demos have entries, never whether an entry
+// still describes its demo.
+for (const e of demoEntries) {
+  if (!('reviewed' in e)) {
+    fail(`${e.id} has no "reviewed" field — set it to null if its prose has never been checked against the lab`);
+    continue;
+  }
+  if (e.reviewed === null) continue; // never reviewed, honestly recorded
+  const r = e.reviewed;
+  if (typeof r !== 'object' || Array.isArray(r)) {
+    fail(`${e.id}.reviewed must be null or an object with lab_commit and date`);
+    continue;
+  }
+  if (typeof r.lab_commit !== 'string' || !/^[0-9a-f]{40}$/.test(r.lab_commit)) {
+    fail(`${e.id}.reviewed.lab_commit must be a full 40-character sha, not ${JSON.stringify(r.lab_commit)}`);
+  }
+  if (typeof r.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(r.date)) {
+    fail(`${e.id}.reviewed.date must be an ISO date, not ${JSON.stringify(r.date)}`);
+  }
+  for (const k of Object.keys(r)) {
+    if (k !== 'lab_commit' && k !== 'date') fail(`${e.id}.reviewed carries an unknown key "${k}"`);
+  }
+}
 const demoSlugSet = new Set(demoSlugs);
 
 // index.html's buildLinkRules() partitions the corpus by the same two rules
