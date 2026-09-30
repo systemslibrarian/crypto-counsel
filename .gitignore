@@ -2,3 +2,9 @@ oci.key
 worker/.wrangler/
 node_modules/
 vendor/
+
+# Session transcripts. Parked working files, never part of the corpus -- gitignored so a
+# broad `git add` cannot sweep one in. The catalog repo learned this the hard way: the same
+# 573-line parked file was swept into two different lanes a week apart, byte for byte, and
+# reversing it the first time left it merely untracked rather than ignored.
+chat*.md
