@@ -587,40 +587,26 @@ if (labDoc) {
     const end = body.indexOf('\n\n');
     return (end === -1 ? body : body.slice(0, end)).split('\n').filter((l) => l.startsWith('- '));
   };
-  const featured = section('Featured Projects');
+  // The catalog dropped its editorial "Featured" strip on 2026-10-05, so this
+  // doc carries one list rather than two. The count check is unchanged in
+  // substance: every demo entry in the corpus must be listed exactly once.
   const allDemos = section('All Demos');
 
-  if (!featured || !allDemos) {
-    fail('crypto_lab_readme is missing its "Featured Projects:" or "All Demos:" section');
+  if (!allDemos) {
+    fail('crypto_lab_readme is missing its "All Demos:" section');
   } else {
-    // Every demo entry in the corpus must be listed exactly once, in one
-    // section or the other. Featured demos are listed only under Featured.
-    const listed = featured.length + allDemos.length;
-    if (listed !== demoEntries.length) {
+    if (allDemos.length !== demoEntries.length) {
       fail(
-        `crypto_lab_readme lists ${listed} demos (${featured.length} featured + ${allDemos.length} all) ` +
-          `but the corpus carries ${demoEntries.length} demo entries — regenerate the reference doc from the catalog README`,
+        `crypto_lab_readme lists ${allDemos.length} demos but the corpus carries ` +
+          `${demoEntries.length} demo entries — regenerate the reference doc from the catalog README`,
       );
     }
 
-    const names = [...featured, ...allDemos].map((l) => l.slice(2).split(/ \(https|: /)[0].trim());
+    const names = allDemos.map((l) => l.slice(2).split(/ \(https|: /)[0].trim());
     const seen = new Set();
     for (const n of names) {
       if (seen.has(n)) fail(`crypto_lab_readme lists "${n}" twice`);
       seen.add(n);
-    }
-
-    // Featured lines carry a live URL; each must resolve to a demo entry that
-    // actually exists, so a featured swap cannot point the chatbot at nothing.
-    for (const l of featured) {
-      const m = /\(https:\/\/systemslibrarian\.github\.io\/([^/)]+)\//.exec(l);
-      if (!m) {
-        fail(`crypto_lab_readme featured line has no github.io URL: ${l}`);
-        continue;
-      }
-      const slug = m[1];
-      const entryId = `demo_${slug.replace(/-/g, '_')}`;
-      if (!ids.has(entryId)) fail(`crypto_lab_readme features "${slug}" but corpus has no "${entryId}" entry`);
     }
   }
 }
