@@ -60,6 +60,9 @@ jobs:
       - name: Review ancestry evidence controls
         run: node --test scripts/review-ancestry.test.mjs
 
+      - name: Retrieval and source citation controls
+        run: node --test scripts/demo-evidence.test.mjs
+
       - name: Validator mutation controls
         run: node scripts/mutations.mjs
 

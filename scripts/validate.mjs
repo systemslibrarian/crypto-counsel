@@ -423,7 +423,15 @@ if (app) {
   }
 
   const COMPARE_BASE = 'https://crypto-compare.systemslibrarian.dev/';
-  for (const e of [...algorithmEntries, ...corpus.filter((c) => REFERENCE_DOCS.includes(c.id))]) {
+  const referenceUrls = {
+    crypto_lab_readme: 'https://github.com/systemslibrarian/crypto-lab/blob/main/README.md',
+    crypto_compare_readme: 'https://github.com/systemslibrarian/crypto-compare/blob/main/README.md',
+  };
+  for (const id of REFERENCE_DOCS) {
+    const got = app.sourceChipHref({ id });
+    if (got !== referenceUrls[id]) fail(`index.html sourceChipHref("${id}") returns ${got}; README evidence must link to its own repository README`);
+  }
+  for (const e of algorithmEntries) {
     const got = app.sourceChipHref({ id: e.id });
     if (!got.startsWith(COMPARE_BASE)) {
       fail(`index.html sourceChipHref("${e.id}") returns ${got}; a non-demo entry must link to crypto-compare`);
@@ -433,6 +441,11 @@ if (app) {
     if (cat !== null && !corpusCategories.includes(cat)) {
       fail(`index.html sourceChipHref("${e.id}") links ?cat=${cat}, which is not a category the corpus uses`);
     }
+  }
+  const wep = corpus.find((e) => e.id === 'demo_crypto_lab_wep_crack');
+  if (wep) {
+    const retrieved = app.getContext('What does WEP Crack teach?');
+    if (!retrieved.text.includes(wep.text)) fail('WEP Crack retrieval must retain its complete teaching limits, not only the introduction');
   }
 }
 

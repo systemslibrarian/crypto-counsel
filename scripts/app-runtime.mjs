@@ -277,6 +277,7 @@ export function loadApp(htmlPath) {
   demoSlugFromId: demoSlugFromId,
   demoSiteUrl: demoSiteUrl,
   sourceChipHref: sourceChipHref,
+  getContext: getContext,
   buildLinkRules: buildLinkRules,
   renderSystemPrompt: function (context) {
 ${promptStatement}
