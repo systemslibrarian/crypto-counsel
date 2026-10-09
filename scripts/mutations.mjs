@@ -163,7 +163,7 @@ const MUTATIONS = [
       const { lines } = allDemoLines(e.text);
       e.text = replaceOnce(e.text, `${lines[0]}\n`, '', 'M1 first All Demos line');
     }),
-    expect: /crypto_lab_readme lists \d+ demos .* but the corpus carries \d+ demo entries/,
+    expect: /crypto_lab_readme lists \d+ demos(?: [^\n]*?)? but the corpus carries \d+ demo entries/,
   },
   {
     id: 'M2',
@@ -171,8 +171,7 @@ const MUTATIONS = [
     apply: (d) => editCorpus(d, (c) => {
       const e = doc(c, 'crypto_lab_readme');
       const { section, lines } = allDemoLines(e.text);
-      const keep = Math.max(0, 96 - 4); // 4 featured + 92 = 96 listed
-      e.text = replaceOnce(e.text, section, lines.slice(0, keep).join('\n'), 'M2 All Demos section');
+      e.text = replaceOnce(e.text, section, lines.slice(0, 96).join('\n'), 'M2 All Demos section');
     }),
     expect: /crypto_lab_readme lists 96 demos/,
   },
@@ -190,14 +189,13 @@ const MUTATIONS = [
   },
   {
     id: 'M4',
-    what: `crypto_lab_readme features a slug with no corpus entry (${RETIRED})`,
+    what: `crypto_lab_readme links an All Demos entry to a retired site (${RETIRED}), preserving its count and name`,
     apply: (d) => editCorpus(d, (c) => {
       const e = doc(c, 'crypto_lab_readme');
-      const m = /\(https:\/\/systemslibrarian\.github\.io\/(crypto-lab-[a-z0-9-]+)\/\)/.exec(e.text);
-      if (!m) throw new Error('mutation anchor not found: a featured github.io URL in crypto_lab_readme');
-      e.text = replaceOnce(e.text, m[1], `crypto-lab-${RETIRED}`, 'M4 featured slug');
+      const { lines } = allDemoLines(e.text);
+      e.text = replaceOnce(e.text, lines[0], `${lines[0]} (https://systemslibrarian.github.io/crypto-lab-${RETIRED}/)`, 'M4 All Demos retired link');
     }),
-    expect: new RegExp(`crypto_lab_readme features "crypto-lab-${RETIRED}" but corpus has no `),
+    expect: new RegExp(`corpus\\.json links to https://systemslibrarian\\.github\\.io/crypto-lab-${RETIRED}/, which is not the live site of any corpus demo`),
   },
   {
     id: 'M5',
