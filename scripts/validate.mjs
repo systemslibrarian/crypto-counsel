@@ -156,17 +156,21 @@ for (const e of demoEntries) {
 // line as the one that cannot. An absent clone is not a failure here —
 // tools/corpus-freshness.js in the catalog repo is what surveys the fleet.
 {
-  const { spawnSync } = await import('node:child_process');
+  const { reviewAncestry } = await import('./review-ancestry.mjs');
   let checked = 0, unverifiable = 0;
   for (const e of demoEntries) {
     if (!e.reviewed) continue;
     const slug = demoSlug(e.id);
     const dir = new URL(`../../crypto-lab-${slug}/`, import.meta.url).pathname;
     if (!existsSync(dir)) { unverifiable++; continue; }
-    const probe = spawnSync('git', ['-C', dir, 'merge-base', '--is-ancestor', e.reviewed.lab_commit, 'origin/main'], { stdio: 'ignore' });
-    if (probe.error || probe.status === null || probe.status > 1) { unverifiable++; continue; }
+    const probe = reviewAncestry(dir, e.reviewed.lab_commit);
+    if (probe.status === 'unverifiable') {
+      unverifiable++;
+      console.warn(`Unverified review ancestry: ${e.id} at ${e.reviewed.lab_commit.slice(0, 8)} — ${probe.reason}`);
+      continue;
+    }
     checked++;
-    if (probe.status === 1) {
+    if (probe.status === 'not-ancestor') {
       fail(`${e.id}.reviewed.lab_commit ${e.reviewed.lab_commit.slice(0, 8)} is not in crypto-lab-${slug}'s origin/main history — that review was of a build nobody else can reach; re-read at origin/main and re-pin`);
     }
   }
