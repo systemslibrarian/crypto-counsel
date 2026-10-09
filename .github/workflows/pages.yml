@@ -57,6 +57,12 @@ jobs:
       - name: Validate repo (corpus, model, slug consistency)
         run: node scripts/validate.mjs
 
+      - name: Review ancestry evidence controls
+        run: node --test scripts/review-ancestry.test.mjs
+
+      - name: Validator mutation controls
+        run: node scripts/mutations.mjs
+
   deploy:
     needs: validate
     if: github.event_name != 'pull_request'
