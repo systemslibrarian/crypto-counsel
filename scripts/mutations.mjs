@@ -45,10 +45,8 @@
 // "demo slugs" (M21). M22 is the same suffix hole on the category list, found
 // while closing M21. All six passed 59015a9.
 //
-// NOT wired into CI. .github/workflows/pages.yml gates the deploy on
-// validate.mjs, and this harness spawns a validator run per fixture against a
-// full copy of the tree; it is a local gate you run when you touch a check, and
-// saying otherwise here would be the same overclaim it exists to prevent.
+// .github/workflows/pages.yml runs these controls before deployment. Each
+// fixture runs the real validator against an isolated copy of the tree.
 
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -402,6 +400,26 @@ const MUTATIONS = [
       'M22 FORMAT line of the real template',
     )),
     expect: /generated system prompt carries 2 lines whose label matches/,
+  },
+  {
+    id: 'M23',
+    what: 'hub README source chip incorrectly cites crypto-compare',
+    apply: (d) => editFile(d, 'index.html', (h) => replaceOnce(
+      h,
+      "if (src.id === 'crypto_lab_readme') return 'https://github.com/systemslibrarian/crypto-lab/blob/main/README.md';",
+      "if (src.id === 'crypto_lab_readme') return 'https://crypto-compare.systemslibrarian.dev/';",
+      'M23 README citation',
+    )),
+    expect: /README evidence must link to its own repository README/,
+  },
+  {
+    id: 'M24',
+    what: 'retrieval truncates demo teaching limits after 600 characters',
+    apply: (d) => editFile(d, 'index.html', (h) => replaceOnce(
+      h, 'const MAX_DOCUMENT = 10000;', 'const MAX_DOCUMENT = 600;',
+      'M24 retrieval document budget',
+    )),
+    expect: /WEP Crack retrieval must retain its complete teaching limits/,
   },
 ];
 

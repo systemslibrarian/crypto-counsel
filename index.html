@@ -790,11 +790,25 @@ function getContext(question) {
   });
 
   const top = scored.filter(d => d.score > 0).sort((a, b) => b.score - a.score).slice(0, 5);
-  const MAX_CHUNK = 600;
-  const text = top
-    .map(d => d.text.length > MAX_CHUNK ? d.text.slice(0, MAX_CHUNK) + '...' : d.text)
-    .join('\n---\n');
-  return { text, sources: top.map(d => ({ id: d.id, title: d.title })) };
+  // Teaching limits often occur after an introduction. Keep whole documents
+  // when they fit, and label any excerpt instead of silently dropping limits.
+  const MAX_DOCUMENT = 10000;
+  const MAX_CONTEXT = 24000;
+  const chunks = [];
+  const sources = [];
+  let remaining = MAX_CONTEXT;
+  for (const d of top) {
+    const separator = chunks.length ? '\n---\n' : '';
+    const allowance = Math.min(MAX_DOCUMENT, remaining - separator.length);
+    const warning = `\n[Incomplete excerpt of ${d.id}; omitted text may contain teaching limits. Do not infer missing behavior.]`;
+    if (allowance <= warning.length) break;
+    const complete = d.text.length <= allowance;
+    const chunk = complete ? d.text : d.text.slice(0, allowance - warning.length) + warning;
+    chunks.push(separator + chunk);
+    remaining -= separator.length + chunk.length;
+    sources.push({ id: d.id, title: d.title, complete });
+  }
+  return { text: chunks.join(''), sources };
 }
 
 function normalizeOutboundUrl(rawUrl) {
@@ -927,6 +941,8 @@ function sourceChipHref(src) {
   // Every demo entry, not only `demo_crypto_lab_*`: demo_snow2 used to fall
   // through to the algorithm branch and cite the crypto-compare homepage.
   if (src.id.startsWith('demo_')) return demoSiteUrl(demoSlugFromId(src.id));
+  if (src.id === 'crypto_lab_readme') return 'https://github.com/systemslibrarian/crypto-lab/blob/main/README.md';
+  if (src.id === 'crypto_compare_readme') return 'https://github.com/systemslibrarian/crypto-compare/blob/main/README.md';
   // Algorithm entry — link to crypto-compare, by category when known
   const idx = corpus.findIndex(d => d.id === src.id);
   const cat = idx >= 0 ? docCategories[idx] : '';
@@ -1120,6 +1136,8 @@ async function ask(question) {
   const systemPrompt = `You are Crypto Counsel, a cryptography advisor for systemslibrarian's education platform.
 
 ${buildLinkRules()}
+
+For a named demo, ground implementation claims and teaching limits in its matched demo document. Distinguish this application from algorithm literature. Do not invent implemented attacks, packet counts, features or guarantees. If evidence is missing or marked incomplete, say what remains unknown rather than filling it in from another algorithm or lab.
 
 CONTEXT: ${context || 'No matched data — use general knowledge.'}
 
