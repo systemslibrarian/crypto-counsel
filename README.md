@@ -315,6 +315,18 @@ retired slug is in the string the model is sent. M18 puts it in a second prompt
 the page also executes, and M19 in a second prompt appended to the same block.
 All five fail now.
 
+M25–M27 are the controls for widening the "All Demos" count check so it counts
+Related Projects too. That widening was needed because a demo entry can outlive
+its card — Snow 2 lost its card on 2026-09-22 and the catalog has listed it
+under Related Projects ever since — and widening a count check is exactly the
+edit that can quietly stop it biting. M25 drops a demo from All Demos without
+adding it anywhere, which is what the check was written for and must still fail.
+M26 lists Snow 2 in both lists, the move done as an addition. M27 strips the URL
+off its Related Projects line so the slug matcher sees nothing: it must fail
+CLOSED on the count rather than silently crediting the line anyway, which is the
+failure mode a matcher that contributes to a denominator has. M23 and M24 are
+not described above; they predate this paragraph.
+
 ## License
 
 See repository for license details.

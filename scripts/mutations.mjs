@@ -421,6 +421,51 @@ const MUTATIONS = [
     )),
     expect: /WEP Crack retrieval must retain its complete teaching limits/,
   },
+
+  // The "All Demos" count check was widened to count Related Projects too,
+  // because a demo entry can outlive its card: Snow 2 lost its card on
+  // 2026-09-22 and the catalog has listed it under Related Projects ever since.
+  // Widening a count check is exactly the edit that can quietly stop it biting,
+  // so these three are the controls for the two ways it could. M25 and M26 are
+  // the gate itself; M27 is the matcher going blind, which must fail CLOSED.
+  {
+    id: 'M25',
+    what: 'a demo entry is dropped from All Demos and NOT added to Related Projects \u2014 what the widened count must still catch',
+    apply: (d) => editCorpus(d, (c) => {
+      const e = doc(c, 'crypto_lab_readme');
+      const { lines } = allDemoLines(e.text);
+      const victim = lines.find((l) => l.startsWith('- Sector Vault:'));
+      if (!victim) throw new Error('mutation anchor not found: Sector Vault All Demos line');
+      e.text = replaceOnce(e.text, `${victim}\n`, '', 'M25 Sector Vault All Demos line');
+    }),
+    expect: /crypto_lab_readme lists \d+ demos in All Demos and 1 under Related Projects but the corpus carries \d+ demo entries/,
+  },
+  {
+    id: 'M26',
+    what: 'Snow 2 is listed under BOTH All Demos and Related Projects \u2014 the move done as an addition',
+    apply: (d) => editCorpus(d, (c) => {
+      const e = doc(c, 'crypto_lab_readme');
+      const { lines } = allDemoLines(e.text);
+      e.text = replaceOnce(
+        e.text, lines[0],
+        `- Snow 2: Stream Cipher \u2014 XChaCha20-Poly1305, Argon2id\n${lines[0]}`,
+        'M26 Snow 2 re-added to All Demos',
+      );
+    }),
+    expect: /crypto_lab_readme lists "Snow 2" twice|crypto_lab_readme lists \d+ demos in All Demos/,
+  },
+  {
+    id: 'M27',
+    what: "Snow 2's Related Projects line loses its URL, so the slug matcher sees nothing \u2014 must fail CLOSED, not count it anyway",
+    apply: (d) => editCorpus(d, (c) => {
+      const e = doc(c, 'crypto_lab_readme');
+      e.text = replaceOnce(
+        e.text, '- Snow 2 (https://systemslibrarian.github.io/snow2/): ', '- Snow 2: ',
+        'M27 Snow 2 Related Projects URL',
+      );
+    }),
+    expect: /crypto_lab_readme lists \d+ demos in All Demos and 0 under Related Projects but the corpus carries \d+ demo entries/,
+  },
 ];
 
 // --- runner ----------------------------------------------------------------

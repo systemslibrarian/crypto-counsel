@@ -607,21 +607,51 @@ if (labDoc) {
   // The catalog dropped its editorial "Featured" strip on 2026-10-05, so this
   // doc carries one list rather than two. The count check is unchanged in
   // substance: every demo entry in the corpus must be listed exactly once.
+  //
+  // It is counted across BOTH of the doc's lists, because the catalog can move
+  // a subject from one to the other and a demo entry outlives its card. Snow 2
+  // is the case: it lost its card on 2026-09-22 and the catalog README has
+  // listed it under Related Projects ever since, while `demo_snow2` remains a
+  // perfectly good corpus entry. Requiring every demo entry to appear in
+  // "All Demos" would therefore force the snapshot to assert a card the catalog
+  // does not have — the snapshot mirrors the catalog, so the catalog decides
+  // which list a subject is in, and this check only decides that it is in one
+  // of them exactly once. The truncation defence is unchanged: the number after
+  // "lists" is still the All Demos count, so a doc cut to 96 lines still fails
+  // with that number named.
   const allDemos = section('All Demos');
+  const relatedProjects = section('Related Projects') || [];
+
+  // A Related Projects line counts toward the denominator only when it names a
+  // subject the corpus carries a demo entry for. Matched on the URL rather than
+  // the display name: nine demo titles differ from their slugs, so name-based
+  // matching silently misses them, and these four lines are the one place the
+  // mismatch would go unnoticed.
+  const relatedDemoSlug = (line) => {
+    const url = (line.match(/\((https?:\/\/[^)]+)\)/) || [])[1];
+    if (!url) return null;
+    const path = url.replace(/^https?:\/\/[^/]+/, '').replace(/^\/|\/$/g, '');
+    if (!path) return null;
+    const slug = path.split('/').pop().replace(/^crypto-lab-/, '');
+    return demoSlugSet.has(slug) ? slug : null;
+  };
+  const relatedDemos = relatedProjects.map(relatedDemoSlug).filter(Boolean);
 
   if (!allDemos) {
     fail('crypto_lab_readme is missing its "All Demos:" section');
   } else {
-    if (allDemos.length !== demoEntries.length) {
+    const listed = allDemos.length + relatedDemos.length;
+    if (listed !== demoEntries.length) {
       fail(
-        `crypto_lab_readme lists ${allDemos.length} demos but the corpus carries ` +
+        `crypto_lab_readme lists ${allDemos.length} demos in All Demos and ` +
+          `${relatedDemos.length} under Related Projects but the corpus carries ` +
           `${demoEntries.length} demo entries — regenerate the reference doc from the catalog README`,
       );
     }
 
-    const names = allDemos.map((l) => l.slice(2).split(/ \(https|: /)[0].trim());
+    const nameOf = (l) => l.slice(2).split(/ \(https|: /)[0].trim();
     const seen = new Set();
-    for (const n of names) {
+    for (const n of [...allDemos, ...relatedProjects].map(nameOf)) {
       if (seen.has(n)) fail(`crypto_lab_readme lists "${n}" twice`);
       seen.add(n);
     }
