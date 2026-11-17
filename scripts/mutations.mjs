@@ -88,15 +88,37 @@ const doc = (corpus, id) => {
 };
 
 // The `All Demos:` bullet lines of crypto_lab_readme, as [startIndex, lines].
-const allDemoLines = (text) => {
-  const head = 'All Demos:\n';
-  const i = text.indexOf(head);
-  if (i === -1) throw new Error('mutation anchor not found: "All Demos:" section of crypto_lab_readme');
-  const body = text.slice(i + head.length);
+/* The catalog listing was ONE record, `crypto_lab_readme`, holding all 258
+ * demo lines under an "All Demos:" heading. On 2026-11-17 it was split into one
+ * record per catalog section, because at 25,619 chars it was two and a half
+ * times getContext()'s MAX_DOCUMENT and 154 of its lines never reached the
+ * model. These fixtures patch a SECTION record now; the parent keeps only the
+ * index and Related Projects. Every one of them reported BROKEN-FIXTURE when
+ * the split landed, which is the harness doing its job -- a mutation that does
+ * not apply is indistinguishable from one nothing caught, so it must never
+ * read as caught. */
+const SECTION_DOC = 'crypto_lab_cryptanalysis_readme';
+const demoLinesOf = (text, id) => {
+  const head = /^Demos in .+ \(\d+\):$/m.exec(text);
+  if (!head) throw new Error(`mutation anchor not found: "Demos in ...:" heading of ${id}`);
+  const at = head.index + head[0].length + 1;
+  const body = text.slice(at);
   const end = body.indexOf('\n\n');
   const section = end === -1 ? body : body.slice(0, end);
-  return { at: i + head.length, section, lines: section.split('\n').filter((l) => l.startsWith('- ')) };
+  return { at, section, lines: section.split('\n').filter((l) => l.startsWith('- ')) };
 };
+const allDemoLines = (text) => demoLinesOf(text, SECTION_DOC);
+/* The demo line for one named exhibit, wherever in the family it sits. */
+const findDemoLine = (c, prefix) => {
+  for (const e of c) {
+    if (typeof e.id !== 'string' || !e.id.endsWith('_readme')) continue;
+    if (e.id === 'crypto_lab_readme' || e.id === 'crypto_compare_readme') continue;
+    const line = (e.text.match(/^- .+$/gm) || []).find((l) => l.startsWith(prefix));
+    if (line) return { e, line };
+  }
+  throw new Error(`mutation anchor not found: a demo line starting "${prefix}"`);
+};
+const FAMILY_COUNT = /the crypto-lab catalog records list \d+ demos across \d+ sections and \d+ under Related Projects but the corpus carries \d+ demo entries/;
 
 // A retired demo: no card in the catalog, no corpus entry, and its site 404s.
 // Every fixture that needs "a slug that must never reach the model" uses it.
@@ -155,43 +177,45 @@ const MUTATIONS = [
   // f4ee9a9 — "Gate the reference docs against the corpus, not against nothing"
   {
     id: 'M1',
-    what: 'crypto_lab_readme loses one "All Demos" line',
+    what: `${SECTION_DOC} loses one demo line`,
     apply: (d) => editCorpus(d, (c) => {
-      const e = doc(c, 'crypto_lab_readme');
+      const e = doc(c, SECTION_DOC);
       const { lines } = allDemoLines(e.text);
-      e.text = replaceOnce(e.text, `${lines[0]}\n`, '', 'M1 first All Demos line');
+      e.text = replaceOnce(e.text, `${lines[0]}\n`, '', 'M1 first section demo line');
     }),
-    expect: /crypto_lab_readme lists \d+ demos(?: [^\n]*?)? but the corpus carries \d+ demo entries/,
+    expect: FAMILY_COUNT,
   },
   {
     id: 'M2',
-    what: 'crypto_lab_readme truncated to 96 listed demos — the shape of the stale doc 2d4a0db replaced',
+    what: `${SECTION_DOC} truncated to 10 listed demos — the shape of the stale doc 2d4a0db replaced`,
     apply: (d) => editCorpus(d, (c) => {
-      const e = doc(c, 'crypto_lab_readme');
+      const e = doc(c, SECTION_DOC);
       const { section, lines } = allDemoLines(e.text);
-      e.text = replaceOnce(e.text, section, lines.slice(0, 96).join('\n'), 'M2 All Demos section');
+      e.text = replaceOnce(e.text, section, lines.slice(0, 10).join('\n'), 'M2 section demo block');
     }),
-    expect: /crypto_lab_readme lists 96 demos/,
+    // The parent's index names the count a reader is handed before the record
+    // itself is retrieved, so a truncated record must disagree with it by name.
+    expect: new RegExp(`crypto_lab_readme says .+ has \\d+ demos; ${SECTION_DOC} lists 10`),
   },
   {
     id: 'M3',
-    what: 'crypto_lab_readme lists one demo name twice',
+    what: `${SECTION_DOC} lists one demo name twice`,
     apply: (d) => editCorpus(d, (c) => {
-      const e = doc(c, 'crypto_lab_readme');
+      const e = doc(c, SECTION_DOC);
       const { lines } = allDemoLines(e.text);
       const dupName = lines[0].slice(2).split(': ')[0];
       const victim = lines[1];
-      e.text = replaceOnce(e.text, victim, `- ${dupName}: ${victim.slice(2).split(': ').slice(1).join(': ')}`, 'M3 second All Demos line');
+      e.text = replaceOnce(e.text, victim, `- ${dupName}: ${victim.slice(2).split(': ').slice(1).join(': ')}`, 'M3 second section demo line');
     }),
-    expect: /crypto_lab_readme lists ".+" twice/,
+    expect: /the crypto-lab catalog records list ".+" twice/,
   },
   {
     id: 'M4',
-    what: `crypto_lab_readme links an All Demos entry to a retired site (${RETIRED}), preserving its count and name`,
+    what: `${SECTION_DOC} links a demo entry to a retired site (${RETIRED}), preserving its count and name`,
     apply: (d) => editCorpus(d, (c) => {
-      const e = doc(c, 'crypto_lab_readme');
+      const e = doc(c, SECTION_DOC);
       const { lines } = allDemoLines(e.text);
-      e.text = replaceOnce(e.text, lines[0], `${lines[0]} (https://systemslibrarian.github.io/crypto-lab-${RETIRED}/)`, 'M4 All Demos retired link');
+      e.text = replaceOnce(e.text, lines[0], `${lines[0]} (https://systemslibrarian.github.io/crypto-lab-${RETIRED}/)`, 'M4 section retired link');
     }),
     expect: new RegExp(`corpus\\.json links to https://systemslibrarian\\.github\\.io/crypto-lab-${RETIRED}/, which is not the live site of any corpus demo`),
   },
@@ -202,7 +226,7 @@ const MUTATIONS = [
       doc(c, 'crypto_compare_readme');
       return c.filter((e) => e.id !== 'crypto_compare_readme');
     }),
-    expect: /corpus\.json is missing reference doc "crypto_compare_readme"/,
+    expect: /corpus\.json is missing required reference doc "crypto_compare_readme"/,
   },
 
   // 3c2c457 — "Hold the corpus's own Live Demo links to the same rule"
@@ -406,8 +430,8 @@ const MUTATIONS = [
     what: 'hub README source chip incorrectly cites crypto-compare',
     apply: (d) => editFile(d, 'index.html', (h) => replaceOnce(
       h,
-      "if (src.id === 'crypto_lab_readme') return 'https://github.com/systemslibrarian/crypto-lab/blob/main/README.md';",
-      "if (src.id === 'crypto_lab_readme') return 'https://crypto-compare.systemslibrarian.dev/';",
+      "    return 'https://github.com/systemslibrarian/crypto-lab/blob/main/README.md';",
+      "    return 'https://crypto-compare.systemslibrarian.dev/';",
       'M23 README citation',
     )),
     expect: /README evidence must link to its own repository README/,
@@ -432,27 +456,24 @@ const MUTATIONS = [
     id: 'M25',
     what: 'a demo entry is dropped from All Demos and NOT added to Related Projects \u2014 what the widened count must still catch',
     apply: (d) => editCorpus(d, (c) => {
-      const e = doc(c, 'crypto_lab_readme');
-      const { lines } = allDemoLines(e.text);
-      const victim = lines.find((l) => l.startsWith('- Sector Vault:'));
-      if (!victim) throw new Error('mutation anchor not found: Sector Vault All Demos line');
-      e.text = replaceOnce(e.text, `${victim}\n`, '', 'M25 Sector Vault All Demos line');
+      const { e, line } = findDemoLine(c, '- Sector Vault:');
+      e.text = replaceOnce(e.text, `${line}\n`, '', 'M25 Sector Vault section line');
     }),
-    expect: /crypto_lab_readme lists \d+ demos in All Demos and 1 under Related Projects but the corpus carries \d+ demo entries/,
+    expect: /the crypto-lab catalog records list \d+ demos across \d+ sections and 1 under Related Projects but the corpus carries \d+ demo entries/,
   },
   {
     id: 'M26',
     what: 'Snow 2 is listed under BOTH All Demos and Related Projects \u2014 the move done as an addition',
     apply: (d) => editCorpus(d, (c) => {
-      const e = doc(c, 'crypto_lab_readme');
+      const e = doc(c, SECTION_DOC);
       const { lines } = allDemoLines(e.text);
       e.text = replaceOnce(
         e.text, lines[0],
         `- Snow 2: Stream Cipher \u2014 XChaCha20-Poly1305, Argon2id\n${lines[0]}`,
-        'M26 Snow 2 re-added to All Demos',
+        'M26 Snow 2 re-added to a section record',
       );
     }),
-    expect: /crypto_lab_readme lists "Snow 2" twice|crypto_lab_readme lists \d+ demos in All Demos/,
+    expect: /the crypto-lab catalog records list "Snow 2" twice|the crypto-lab catalog records list \d+ demos across/,
   },
   {
     id: 'M27',
@@ -464,7 +485,7 @@ const MUTATIONS = [
         'M27 Snow 2 Related Projects URL',
       );
     }),
-    expect: /crypto_lab_readme lists \d+ demos in All Demos and 0 under Related Projects but the corpus carries \d+ demo entries/,
+    expect: /the crypto-lab catalog records list \d+ demos across \d+ sections and 0 under Related Projects but the corpus carries \d+ demo entries/,
   },
 ];
 
