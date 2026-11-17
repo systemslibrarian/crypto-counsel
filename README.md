@@ -6,7 +6,7 @@
 
 ## Features
 
-- **RAG-powered answers** — a local `corpus.json` (358 entries: 97 algorithms, 259 demo cards, 2 reference docs) is searched at query time with TF-IDF scoring and hand-tuned synonym expansion; the top matches are injected into the system prompt for grounded responses.
+- **RAG-powered answers** — a local `corpus.json` (366 entries: 97 algorithms, 259 demo cards, 10 reference docs) is searched at query time with TF-IDF scoring and hand-tuned synonym expansion; the top matches are injected into the system prompt for grounded responses.
 - **Source citations** — each AI answer lists the corpus entries that informed it, so responses are traceable to their grounding data.
 - **Streaming chat UI** — single-file `index.html` app with real-time token streaming via the Groq API (proxied through a Cloudflare Worker).
 - **Conversation persistence** — chat history is saved in `localStorage` and restored on reload; a **Clear** button wipes both the display and the model-facing history.
@@ -21,10 +21,12 @@
 
 ```
 index.html          Single-file front-end (UI, RAG retrieval, streaming client)
-corpus.json         RAG corpus — 358 entries:
+corpus.json         RAG corpus — 366 entries:
                       97 algorithm entries
                       258 crypto-lab demo cards + 1 standalone demo (snow2)
-                      2 reference docs (crypto-compare, crypto-lab)
+                      10 reference docs (crypto-compare; the crypto-lab
+                      catalog index + one record per catalog section, split
+                      so none exceeds getContext()'s MAX_DOCUMENT)
 algorithms.ts       Complete, richly-typed reference mirror (all 97 algorithms,
                     an exact id match against corpus.json) carried over from the
                     crypto-compare project. NOT the source of truth and not

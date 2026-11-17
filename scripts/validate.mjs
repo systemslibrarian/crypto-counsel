@@ -98,7 +98,18 @@ for (const [i, e] of corpus.entries()) {
   ids.add(e.id);
 }
 
-const REFERENCE_DOCS = ['crypto_lab_readme', 'crypto_compare_readme'];
+// The two reference docs this corpus cannot be without, and the family the
+// runtime actually recognises. index.html partitions the corpus on the
+// `_readme` suffix, so this derives the SAME set rather than carrying a list
+// that can drift from it: on 2026-11-17 the single crypto-lab catalog record
+// was split into one per catalog section, and a hardcoded list would have made
+// eight new reference docs read as algorithm entries without anything failing.
+const REQUIRED_REFERENCE_DOCS = ['crypto_lab_readme', 'crypto_compare_readme'];
+const REFERENCE_DOCS = corpus
+  .filter((e) => typeof e.id === 'string' && !e.id.startsWith('demo_') && e.id.endsWith('_readme'))
+  .map((e) => e.id);
+// The crypto-lab catalog family: the parent index plus one record per section.
+const CATALOG_DOCS = REFERENCE_DOCS.filter((id) => id !== 'crypto_compare_readme');
 
 // The corpus is the single source of truth for what demos exist. NOTE: every
 // `demo_*` id counts, not just `demo_crypto_lab_*`. The old version of this
@@ -181,8 +192,9 @@ const demoSlugSet = new Set(demoSlugs);
 // index.html's buildLinkRules() partitions the corpus by the same two rules
 // (`demo_` prefix, `_readme` suffix). Pin that so the runtime derivation and
 // this check cannot start disagreeing about what an algorithm entry is.
-for (const id of REFERENCE_DOCS) {
+for (const id of REQUIRED_REFERENCE_DOCS) {
   if (!id.endsWith('_readme')) fail(`reference doc "${id}" must end in _readme — index.html partitions the corpus on that suffix`);
+  if (!REFERENCE_DOCS.includes(id)) fail(`corpus.json is missing required reference doc "${id}"`);
 }
 
 const algorithmEntries = corpus.filter(
@@ -423,10 +435,14 @@ if (app) {
   }
 
   const COMPARE_BASE = 'https://crypto-compare.systemslibrarian.dev/';
-  const referenceUrls = {
-    crypto_lab_readme: 'https://github.com/systemslibrarian/crypto-lab/blob/main/README.md',
-    crypto_compare_readme: 'https://github.com/systemslibrarian/crypto-compare/blob/main/README.md',
-  };
+  // Every crypto-lab catalog record cites the catalog's README, which is where
+  // its lines are generated from; crypto-compare's cites its own.
+  const referenceUrls = Object.fromEntries(REFERENCE_DOCS.map((id) => [
+    id,
+    id === 'crypto_compare_readme'
+      ? 'https://github.com/systemslibrarian/crypto-compare/blob/main/README.md'
+      : 'https://github.com/systemslibrarian/crypto-lab/blob/main/README.md',
+  ]));
   for (const id of REFERENCE_DOCS) {
     const got = app.sourceChipHref({ id });
     if (got !== referenceUrls[id]) fail(`index.html sourceChipHref("${id}") returns ${got}; README evidence must link to its own repository README`);
@@ -595,38 +611,71 @@ for (const id of REFERENCE_DOCS) {
   if (!ids.has(id)) fail(`corpus.json is missing reference doc "${id}"`);
 }
 
-const labDoc = corpus.find((e) => e.id === 'crypto_lab_readme');
-if (labDoc) {
-  const section = (name) => {
-    const i = labDoc.text.indexOf(`${name}:\n`);
+// `crypto_lab_readme` was ONE record carrying all 258 demo lines, and nothing
+// checked it: on 2026-09-09 it described 96 demos while the corpus carried 193.
+// The catalog's own tools/corpus-sync.js cannot see this -- it only diffs
+// `demo_crypto_lab_*` ids against the cards -- so the chatbot could answer from
+// a per-demo entry it had while its overview of the catalog described a
+// smaller, older lab. These assertions are the only thing standing between
+// that family and the next silent divergence, and they run offline: they
+// compare the records against this repo's own demo entries, not against a
+// sibling checkout that CI does not have.
+//
+// On 2026-11-17 that single record was SPLIT, one per catalog section, because
+// at 25,619 chars it was two and a half times getContext()'s MAX_DOCUMENT and
+// 154 of its 258 lines never reached the model -- a record whose whole job is
+// saying what the catalog contains, answering about the first third of it. The
+// count is therefore taken across the family, which also means a section
+// record that goes missing is a failure rather than a smaller list.
+const catalogDocs = CATALOG_DOCS.map((id) => corpus.find((e) => e.id === id)).filter(Boolean);
+if (catalogDocs.length) {
+  // `- ` items under a heading, to the first blank line. Same shape the records
+  // have had since they were written by hand, and the shape index.html's
+  // retrieval sees.
+  const section = (text, name) => {
+    const i = text.indexOf(`${name}:\n`);
     if (i === -1) return null;
-    const body = labDoc.text.slice(i + name.length + 2);
+    const body = text.slice(i + name.length + 2);
     const end = body.indexOf('\n\n');
     return (end === -1 ? body : body.slice(0, end)).split('\n').filter((l) => l.startsWith('- '));
   };
-  // The catalog dropped its editorial "Featured" strip on 2026-10-05, so this
-  // doc carries one list rather than two. The count check is unchanged in
-  // substance: every demo entry in the corpus must be listed exactly once.
-  //
-  // It is counted across BOTH of the doc's lists, because the catalog can move
-  // a subject from one to the other and a demo entry outlives its card. Snow 2
-  // is the case: it lost its card on 2026-09-22 and the catalog README has
-  // listed it under Related Projects ever since, while `demo_snow2` remains a
-  // perfectly good corpus entry. Requiring every demo entry to appear in
-  // "All Demos" would therefore force the snapshot to assert a card the catalog
-  // does not have — the snapshot mirrors the catalog, so the catalog decides
-  // which list a subject is in, and this check only decides that it is in one
-  // of them exactly once. The truncation defence is unchanged: the number after
-  // "lists" is still the All Demos count, so a doc cut to 96 lines still fails
-  // with that number named.
-  const allDemos = section('All Demos');
-  const relatedProjects = section('Related Projects') || [];
+
+  const parent = corpus.find((e) => e.id === 'crypto_lab_readme');
+  const index = parent ? section(parent.text, 'Catalog sections') : null;
+  if (!index) {
+    fail('crypto_lab_readme is missing its "Catalog sections:" index');
+  } else {
+    // Every id the index names must exist, and every section record must be
+    // named by the index. A record nobody indexes is unreachable from the
+    // parent; an index line with no record sends the model to nothing.
+    const named = index.map((l) => (l.match(/:\s*(crypto_lab_[a-z0-9_]+_readme)\s*$/) || [])[1]).filter(Boolean);
+    const have = CATALOG_DOCS.filter((id) => id !== 'crypto_lab_readme');
+    const missing = named.filter((id) => !have.includes(id));
+    const unindexed = have.filter((id) => !named.includes(id));
+    if (missing.length) fail(`crypto_lab_readme indexes ${missing.join(', ')}, which the corpus does not carry`);
+    if (unindexed.length) fail(`${unindexed.join(', ')} is in the corpus but not indexed by crypto_lab_readme`);
+
+    // The count beside each section name must be that record's line count. It
+    // is the figure a reader is handed before the record itself is retrieved.
+    for (const line of index) {
+      const m = line.match(/^- (.+) \((\d+) demos\): (crypto_lab_[a-z0-9_]+_readme)$/);
+      if (!m) continue;
+      const doc = corpus.find((e) => e.id === m[3]);
+      if (!doc) continue;
+      const lines = (doc.text.match(/^- .+$/gm) || []).length;
+      if (lines !== Number(m[2])) {
+        fail(`crypto_lab_readme says ${m[1]} has ${m[2]} demos; ${m[3]} lists ${lines}`);
+      }
+    }
+  }
 
   // A Related Projects line counts toward the denominator only when it names a
   // subject the corpus carries a demo entry for. Matched on the URL rather than
   // the display name: nine demo titles differ from their slugs, so name-based
   // matching silently misses them, and these four lines are the one place the
-  // mismatch would go unnoticed.
+  // mismatch would go unnoticed. Snow 2 is why the rule exists -- it lost its
+  // card on 2026-09-22 and the catalog README has listed it under Related
+  // Projects ever since, while `demo_snow2` remains a good corpus entry.
   const relatedDemoSlug = (line) => {
     const url = (line.match(/\((https?:\/\/[^)]+)\)/) || [])[1];
     if (!url) return null;
@@ -635,25 +684,47 @@ if (labDoc) {
     const slug = path.split('/').pop().replace(/^crypto-lab-/, '');
     return demoSlugSet.has(slug) ? slug : null;
   };
+  const relatedProjects = parent ? (section(parent.text, 'Related Projects') || []) : [];
   const relatedDemos = relatedProjects.map(relatedDemoSlug).filter(Boolean);
 
-  if (!allDemos) {
-    fail('crypto_lab_readme is missing its "All Demos:" section');
-  } else {
-    const listed = allDemos.length + relatedDemos.length;
-    if (listed !== demoEntries.length) {
-      fail(
-        `crypto_lab_readme lists ${allDemos.length} demos in All Demos and ` +
-          `${relatedDemos.length} under Related Projects but the corpus carries ` +
-          `${demoEntries.length} demo entries — regenerate the reference doc from the catalog README`,
-      );
-    }
+  // Every demo entry appears in exactly one of these records, once.
+  const sectionLines = [];
+  for (const doc of catalogDocs) {
+    if (doc.id === 'crypto_lab_readme') continue;
+    sectionLines.push(...(doc.text.match(/^- .+$/gm) || []));
+  }
+  const listed = sectionLines.length + relatedDemos.length;
+  if (listed !== demoEntries.length) {
+    fail(
+      `the crypto-lab catalog records list ${sectionLines.length} demos across ` +
+        `${catalogDocs.length - 1} sections and ${relatedDemos.length} under Related ` +
+        `Projects but the corpus carries ${demoEntries.length} demo entries — ` +
+        `regenerate them with: node tools/corpus-sync.js overview --write`,
+    );
+  }
 
-    const nameOf = (l) => l.slice(2).split(/ \(https|: /)[0].trim();
-    const seen = new Set();
-    for (const n of [...allDemos, ...relatedProjects].map(nameOf)) {
-      if (seen.has(n)) fail(`crypto_lab_readme lists "${n}" twice`);
-      seen.add(n);
+  const nameOf = (l) => l.slice(2).split(/ \(https|: /)[0].trim();
+  const seen = new Set();
+  for (const n of [...sectionLines, ...relatedProjects].map(nameOf)) {
+    if (seen.has(n)) fail(`the crypto-lab catalog records list "${n}" twice`);
+    seen.add(n);
+  }
+
+  // And no record may exceed what retrieval will actually hand the model.
+  // MAX_DOCUMENT is read from index.html rather than retyped, because a limit
+  // copied into a checker is a limit that can disagree with the code it
+  // describes -- which is exactly how 154 lines came to be silently cut.
+  const maxDoc = Number((html.match(/const MAX_DOCUMENT = (\d+);/) || [])[1]);
+  if (!Number.isFinite(maxDoc)) {
+    fail('could not read `const MAX_DOCUMENT` from index.html, so the record-size rule cannot be checked');
+  } else {
+    for (const doc of catalogDocs) {
+      if (doc.text.length > maxDoc) {
+        fail(
+          `${doc.id} is ${doc.text.length} chars; getContext() truncates a retrieved ` +
+            `document at MAX_DOCUMENT = ${maxDoc}, so its tail never reaches the model`,
+        );
+      }
     }
   }
 }
