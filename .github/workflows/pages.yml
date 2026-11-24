@@ -27,6 +27,8 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      pages_artifact: ${{ steps.package.outputs.name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -38,9 +40,8 @@ jobs:
       # which meant that in CI, the one place it runs unattended, neither check
       # ran at all and a drift to 193 passed green. It is a hard failure now
       # when the checkout is absent, so CI has to supply it. Public repo, so
-      # the default GITHUB_TOKEN is enough; it is read-only reference data and
-      # lands OUTSIDE the deploy job, which takes its own clean checkout, so
-      # nothing here reaches the published artifact.
+      # the default GITHUB_TOKEN is enough. Packaging from the tracked tree
+      # keeps the reference checkout out of the published site.
       - name: Check out crypto-compare (cross-repo oracle)
         uses: actions/checkout@v7
         with:
@@ -66,6 +67,22 @@ jobs:
       - name: Validator mutation controls
         run: node scripts/mutations.mjs
 
+      - name: Package the validated revision
+        id: package
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/pages-source"
+          git archive "$GITHUB_SHA" | tar -xf - -C "$RUNNER_TEMP/pages-source"
+          echo "name=github-pages-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the validated site
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: ${{ runner.temp }}/pages-source
+
   deploy:
     needs: validate
     if: github.event_name != 'pull_request'
@@ -75,20 +92,14 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
       - name: Setup Pages
         uses: actions/configure-pages@v6
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: '.'
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          artifact_name: ${{ needs.validate.outputs.pages_artifact }}
 
   # Dependabot only. Depends on every gate job in this workflow, so a bump can
   # only merge itself once this lab's whole PR gate went green. Majors are
